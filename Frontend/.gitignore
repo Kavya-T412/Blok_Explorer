@@ -12,6 +12,22 @@ dist
 dist-ssr
 *.local
 
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# SSH keys and sensitive files
+passwrd
+passwrd.pub
+*.pem
+*.key
+id_rsa*
+
+# Lock files (keep package-lock.json, ignore others)
+bun.lockb
+yarn.lock
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

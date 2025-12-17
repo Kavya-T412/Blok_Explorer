@@ -304,7 +304,9 @@ class BlockchainService {
     try {
       console.log(`📡 Fetching transactions from backend API for ${address}`);
       
-      const response = await fetch(`${BACKEND_API_URL}/api/transactions/${address}`);
+      const response = await fetch(`${BACKEND_API_URL}/api/transactions/${address}`, {
+        signal: AbortSignal.timeout(30000) // 30 second timeout
+      });
       
       if (!response.ok) {
         throw new Error(`Backend API error: ${response.status}`);
@@ -316,44 +318,72 @@ class BlockchainService {
         throw new Error(data.error || 'Failed to fetch from backend');
       }
       
+      console.log(`📊 Backend returned ${data.transactions?.length || 0} transactions`);
+      
+      // Log first transaction for debugging
+      // if (data.transactions && data.transactions.length > 0) {
+      //   console.log('Sample transaction:', JSON.stringify(data.transactions[0], null, 2));
+      // }
+      
       // Transform backend response to match our Transaction interface
       const transactions: Transaction[] = data.transactions.map((tx: any) => {
-        const value = parseFloat(tx.value || '0');
+        // Alchemy returns value as a decimal number (not wei), so use it directly
+        const value = tx.value !== null && tx.value !== undefined ? parseFloat(tx.value) : 0;
         const valueFormatted = value > 0 ? value.toFixed(6) : '0';
         
         // Parse timestamp correctly - backend returns ISO string in metadata.blockTimestamp
         let txTimestamp: number;
         if (tx.metadata?.blockTimestamp) {
           // Convert ISO string to Unix timestamp (in seconds)
-          txTimestamp = new Date(tx.metadata.blockTimestamp).getTime() / 1000;
+          const date = new Date(tx.metadata.blockTimestamp);
+          if (!isNaN(date.getTime())) {
+            txTimestamp = Math.floor(date.getTime() / 1000);
+          } else {
+            console.warn(`Invalid timestamp for tx ${tx.hash}: ${tx.metadata.blockTimestamp}`);
+            txTimestamp = Math.floor(Date.now() / 1000);
+          }
         } else {
-          txTimestamp = Date.now() / 1000;
+          txTimestamp = Math.floor(Date.now() / 1000);
         }
+        
+        // Get asset symbol, default to 'ETH' if not provided
+        const asset = tx.asset || 'ETH';
         
         return {
           hash: tx.hash,
-          from: tx.from,
+          from: tx.from || '',
           to: tx.to || 'Contract Deployment',
-          value: `${valueFormatted} ${tx.asset || 'ETH'}`,
-          valueRaw: tx.value?.toString() || '0',
-          gas: '0', // Backend doesn't provide gas info
-          chain: tx.network,
+          value: `${valueFormatted} ${asset}`,
+          valueRaw: value.toString(),
+          gas: tx.gas?.toString() || '0',
+          chain: tx.network || 'Unknown',
           status: 'success' as const, // Alchemy only returns successful transactions
           time: this.formatTimeAgo(txTimestamp),
           date: this.formatDate(txTimestamp),
           timestamp: txTimestamp,
-          blockNumber: parseInt(tx.blockNum || '0', 16),
-          type: (!tx.to || tx.to === null) ? 'contract-deployment' : 'transfer',
+          blockNumber: tx.blockNum ? parseInt(tx.blockNum, 16) : 0,
+          type: (!tx.to || tx.to === null) ? 'contract-deployment' : 
+                (tx.category === 'erc20' || tx.category === 'erc721' || tx.category === 'erc1155') ? 'contract-interaction' : 'transfer',
           direction: tx.direction as 'sent' | 'received',
           isContractCreation: !tx.to || tx.to === null,
-          contractAddress: tx.contractAddress,
+          contractAddress: tx.contractAddress || '',
         };
       });
       
       console.log(`✅ Backend API returned ${transactions.length} transactions`);
       return transactions;
     } catch (error) {
-      console.error('Failed to fetch from backend API:', error);
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          console.error('⏱️ Backend request timed out (30s)');
+        } else if (error.message.includes('Failed to fetch')) {
+          console.error('🔌 Cannot connect to backend - is it running on port 3001?');
+        } else {
+          console.error('❌ Backend API error:', error.message);
+        }
+      } else {
+        console.error('❌ Unknown backend error:', error);
+      }
       return [];
     }
   }
@@ -490,11 +520,28 @@ class BlockchainService {
     }
   }
 
+  // Clear transaction cache (for manual refresh)
+  clearTransactionCache(address?: string): void {
+    if (address) {
+      const cacheKey = `${address}-txs`;
+      this.transactionCache.delete(cacheKey);
+      console.log(`🗑️ Cleared transaction cache for ${address}`);
+    } else {
+      this.transactionCache.clear();
+      console.log(`🗑️ Cleared all transaction caches`);
+    }
+  }
+
   // Get ALL transactions from all chains (with caching and deduplication)
-  async getAllTransactions(address: string): Promise<Transaction[]> {
+  async getAllTransactions(address: string, forceRefresh: boolean = false): Promise<Transaction[]> {
     if (!address) return [];
 
     const cacheKey = `${address}-txs`;
+    
+    // Clear cache if force refresh requested
+    if (forceRefresh) {
+      this.clearTransactionCache(address);
+    }
     
     // Check cache first
     const cached = this.transactionCache.get(cacheKey);
@@ -538,8 +585,8 @@ class BlockchainService {
     
     if (backendTxs.length > 0) {
       console.log(`✅ Using backend API results: ${backendTxs.length} transactions`);
-      // Sort by timestamp (most recent first)
-      return backendTxs.sort((a, b) => b.timestamp - a.timestamp);
+      // Backend already sorts by timestamp (most recent first), preserve that order
+      return backendTxs;
     }
     
     // Fallback to explorer + RPC if backend fails
@@ -578,10 +625,10 @@ class BlockchainService {
       )
       .flatMap(result => result.value);
 
-    // Sort by timestamp (most recent first)
+    // Sort by timestamp (most recent first) only for fallback
     const sortedTxs = allTxs.sort((a, b) => b.timestamp - a.timestamp);
     
-    console.log(`✅ Found ${sortedTxs.length} total transactions`);
+    console.log(`✅ Found ${sortedTxs.length} total transactions (sorted by timestamp)`);
     return sortedTxs;
   }
 
@@ -648,6 +695,26 @@ class BlockchainService {
     return balances.reduce((total, balance) => {
       return total + (balance.usdValueNum || 0);
     }, 0);
+  }
+
+  // Get explorer URL for a transaction hash based on chain name
+  getExplorerUrl(chainName: string, txHash: string): string {
+    const explorerMap: Record<string, string> = {
+      'Ethereum': 'https://etherscan.io/tx/',
+      'Ethereum Mainnet': 'https://etherscan.io/tx/',
+      'Sepolia': 'https://sepolia.etherscan.io/tx/',
+      'Ethereum Sepolia': 'https://sepolia.etherscan.io/tx/',
+      'Polygon': 'https://polygonscan.com/tx/',
+      'Polygon Mainnet': 'https://polygonscan.com/tx/',
+      'Polygon Amoy': 'https://amoy.polygonscan.com/tx/',
+      'BSC': 'https://bscscan.com/tx/',
+      'BNB Mainnet': 'https://bscscan.com/tx/',
+      'BSC Testnet': 'https://testnet.bscscan.com/tx/',
+      'BNB Testnet': 'https://testnet.bscscan.com/tx/',
+    };
+    
+    const baseUrl = explorerMap[chainName] || 'https://etherscan.io/tx/';
+    return `${baseUrl}${txHash}`;
   }
 }
 

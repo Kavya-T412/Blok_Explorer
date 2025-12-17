@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { TrendingUp, Activity, ArrowUpRight, RefreshCw, Wallet, AlertCircle, FileCode, Send, Code } from 'lucide-react';
+import { TrendingUp, Activity, ArrowUpRight, RefreshCw, Wallet, AlertCircle, FileCode, Send, Code, ExternalLink } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { useWallet } from '@/contexts/WalletContext';
 import { NetworkModeIndicator } from '@/components/NetworkModeToggle';
+import { blockchainService } from '@/services/blockchainService';
 
 const Dashboard = () => {
   const { address, isConnected } = useWallet();
@@ -16,12 +17,32 @@ const Dashboard = () => {
 
   const getTransactionTypeInfo = (tx: typeof transactions[0]) => {
     if (tx.type === 'contract-deployment' || tx.isContractCreation) {
-      return { Icon: FileCode, variant: 'default' as const, label: 'Contract Deploy', description: 'Deployed new contract' };
+      return { 
+        Icon: FileCode, 
+        variant: 'default' as const, 
+        label: 'Contract Deploy', 
+        description: 'Deployed new contract',
+        isContract: true 
+      };
     }
     if (tx.type === 'contract-interaction') {
-      return { Icon: Code, variant: 'secondary' as const, label: 'Contract Call', description: 'Interacted with contract' };
+      // Check if it has methodId for function call detection
+      const hasMethod = tx.methodId && tx.methodId !== '0x';
+      return { 
+        Icon: Code, 
+        variant: 'secondary' as const, 
+        label: hasMethod ? 'Function Call' : 'Contract Call', 
+        description: hasMethod ? `Called: ${tx.methodId}` : 'Interacted with contract',
+        isContract: true
+      };
     }
-    return { Icon: Send, variant: 'outline' as const, label: 'Transfer', description: 'Token transfer' };
+    return { 
+      Icon: Send, 
+      variant: 'outline' as const, 
+      label: 'Transfer', 
+      description: 'To account',
+      isContract: false 
+    };
   };
 
   const getDirectionInfo = (tx: typeof transactions[0]) => {
@@ -166,7 +187,9 @@ const Dashboard = () => {
                 <div>
                   <h2 className="text-2xl font-bold">All Transactions</h2>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Complete transaction history across all chains {transactions.length > 0 && `(${transactions.length} total)`}
+                    {transactions.length > 0 
+                      ? `Complete transaction history across all chains (${transactions.length} total) • Sorted by date (newest first)` 
+                      : 'Complete transaction history across all chains'}
                   </p>
                 </div>
                 <TrendingUp className="w-5 h-5 text-primary" />
@@ -194,8 +217,11 @@ const Dashboard = () => {
                       {transactions.map((tx) => {
                         const { Icon, variant, label, description } = getTransactionTypeInfo(tx);
                         const directionInfo = getDirectionInfo(tx);
-                        const valueNum = parseFloat(tx.value.split(' ')[0]);
-                        const symbol = tx.value.split(' ')[1] || '';
+                        
+                        // Safely parse value and symbol
+                        const valueParts = (tx.value || '0 ETH').split(' ');
+                        const valueNum = parseFloat(valueParts[0]) || 0;
+                        const symbol = valueParts[1] || 'ETH';
                         
                         return (
                           <tr key={tx.hash} className="border-b border-white/5 hover:bg-white/5 transition-colors">
@@ -222,30 +248,61 @@ const Dashboard = () => {
                             </td>
                             <td className="py-4 px-2">
                               <div className="text-xs">
-                                {tx.direction === 'received' ? (
+                                {tx.direction === 'received' && tx.from ? (
                                   <>
                                     <div className="text-muted-foreground">From:</div>
                                     <code className="text-primary">{tx.from.slice(0, 10)}...{tx.from.slice(-8)}</code>
                                   </>
                                 ) : tx.isContractCreation ? (
                                   <>
-                                    <div className="text-muted-foreground">Contract:</div>
+                                    <div className="text-muted-foreground flex items-center gap-1">
+                                      <FileCode className="w-3 h-3" />
+                                      Contract:
+                                    </div>
                                     <code className="text-primary">
-                                      {tx.contractAddress ? `${tx.contractAddress.slice(0, 10)}...${tx.contractAddress.slice(-8)}` : 'Pending...'}
+                                      {tx.contractAddress && tx.contractAddress !== '' 
+                                        ? `${tx.contractAddress.slice(0, 10)}...${tx.contractAddress.slice(-8)}` 
+                                        : tx.to && tx.to !== 'Contract Deployment'
+                                        ? `${tx.to.slice(0, 10)}...${tx.to.slice(-8)}`
+                                        : `${tx.hash.slice(0, 10)}...${tx.hash.slice(-8)}`}
                                     </code>
+                                  </>
+                                ) : tx.to && tx.to !== 'Contract Deployment' ? (
+                                  <>
+                                    <div className="text-muted-foreground flex items-center gap-1">
+                                      {tx.type === 'contract-interaction' ? (
+                                        <>
+                                          <Code className="w-3 h-3" />
+                                          To Contract:
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Send className="w-3 h-3" />
+                                          To Account:
+                                        </>
+                                      )}
+                                    </div>
+                                    <code className="text-primary">{tx.to.slice(0, 10)}...{tx.to.slice(-8)}</code>
                                   </>
                                 ) : (
                                   <>
                                     <div className="text-muted-foreground">To:</div>
-                                    <code className="text-primary">{tx.to.slice(0, 10)}...{tx.to.slice(-8)}</code>
+                                    <code className="text-primary">Contract</code>
                                   </>
                                 )}
                               </div>
                             </td>
                             <td className="py-4 px-2">
-                              <code className="text-sm text-primary hover:underline cursor-pointer" title={tx.hash}>
-                                {tx.hash.slice(0, 8)}...
-                              </code>
+                              <a 
+                                href={blockchainService.getExplorerUrl(tx.chain, tx.hash)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-sm text-primary hover:underline cursor-pointer group"
+                                title={`View on ${tx.chain} Explorer: ${tx.hash}`}
+                              >
+                                <code>{tx.hash.slice(0, 8)}...</code>
+                                <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </a>
                             </td>
                             <td className="py-4 px-2"><Badge variant="outline">{tx.chain}</Badge></td>
                             <td className="py-4 px-2">

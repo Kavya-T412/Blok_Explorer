@@ -21,7 +21,7 @@ export const useDashboardData = (): DashboardData => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (forceRefresh: boolean = false) => {
     if (!address || !isConnected) {
       setBalances([]);
       setTransactions([]);
@@ -37,7 +37,7 @@ export const useDashboardData = (): DashboardData => {
       // Fetch all data in parallel - get ALL transactions (no limit)
       const [balancesData, transactionsData, chainComparisonData, totalValueData] = await Promise.allSettled([
         blockchainService.getAllBalances(address),
-        blockchainService.getAllTransactions(address), // Fetch ALL transactions across all chains
+        blockchainService.getAllTransactions(address, forceRefresh), // Pass forceRefresh flag
         blockchainService.getChainComparison(),
         blockchainService.getTotalValue(address),
       ]);
@@ -87,11 +87,14 @@ export const useDashboardData = (): DashboardData => {
 
   // Fetch data on mount and when address changes
   useEffect(() => {
-    fetchData();
+    fetchData(false);
   }, [fetchData]);
 
-  // No auto-refresh - only manual refresh via the Refresh button
-  // Users can click the Refresh button in Dashboard to update data
+  // Manual refresh function that forces cache clear
+  const refetch = useCallback(async () => {
+    console.log('🔄 Manual refresh triggered - clearing cache');
+    await fetchData(true); // Force refresh by clearing cache
+  }, [fetchData]);
 
   return {
     balances,
@@ -100,6 +103,6 @@ export const useDashboardData = (): DashboardData => {
     totalValue,
     isLoading,
     error,
-    refetch: fetchData,
+    refetch, // Use the refetch function, not fetchData
   };
 };
