@@ -231,7 +231,6 @@ class BlockchainService {
 
   // Fetch native token price from CoinGecko
   private async fetchPrice(symbol: string, isTestnet: boolean = false): Promise<number> {
-    if (isTestnet) return 0;
     const cacheKey = symbol.toLowerCase();
     const cached = this.priceCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) return cached.price;
@@ -270,8 +269,10 @@ class BlockchainService {
         chain: config.name,
         symbol: config.symbol,
         balance: parseFloat(balanceEth).toFixed(4),
-        usdValue: isTestnet ? 'Testnet' : `$${usdValueNum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-        usdValueNum: isTestnet ? 0 : usdValueNum,
+        usdValue: isTestnet 
+          ? `$${usdValueNum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Testnet)` 
+          : `$${usdValueNum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        usdValueNum: usdValueNum,
         color: config.color,
         rawBalance: balanceWei.toString(),
       };
@@ -691,7 +692,7 @@ class BlockchainService {
   async getTotalValue(address: string): Promise<number> {
     const balances = await this.getAllBalances(address);
     
-    // Sum up the numeric USD values (will be 0 for testnet balances)
+    // Sum up the numeric USD values (includes testnet balances calculated at mainnet prices)
     return balances.reduce((total, balance) => {
       return total + (balance.usdValueNum || 0);
     }, 0);
