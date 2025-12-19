@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { blockchainService, Balance, Transaction, ChainComparison } from '@/services/blockchainService';
+import { blockchainService, Balance, Transaction } from '@/services/blockchainService';
 import { useWallet } from '@/contexts/WalletContext';
 
 interface DashboardData {
   balances: Balance[];
   transactions: Transaction[];
-  chainComparison: ChainComparison[];
   totalValue: number;
   isLoading: boolean;
   error: string | null;
@@ -16,7 +15,6 @@ export const useDashboardData = (): DashboardData => {
   const { address, isConnected } = useWallet();
   const [balances, setBalances] = useState<Balance[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [chainComparison, setChainComparison] = useState<ChainComparison[]>([]);
   const [totalValue, setTotalValue] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +23,6 @@ export const useDashboardData = (): DashboardData => {
     if (!address || !isConnected) {
       setBalances([]);
       setTransactions([]);
-      setChainComparison([]);
       setTotalValue(0);
       return;
     }
@@ -35,10 +32,9 @@ export const useDashboardData = (): DashboardData => {
 
     try {
       // Fetch all data in parallel - get ALL transactions (no limit)
-      const [balancesData, transactionsData, chainComparisonData, totalValueData] = await Promise.allSettled([
+      const [balancesData, transactionsData, totalValueData] = await Promise.allSettled([
         blockchainService.getAllBalances(address),
         blockchainService.getAllTransactions(address, forceRefresh), // Pass forceRefresh flag
-        blockchainService.getChainComparison(),
         blockchainService.getTotalValue(address),
       ]);
 
@@ -56,13 +52,6 @@ export const useDashboardData = (): DashboardData => {
         console.error('Failed to fetch transactions:', transactionsData.reason);
       }
 
-      // Handle chain comparison
-      if (chainComparisonData.status === 'fulfilled') {
-        setChainComparison(chainComparisonData.value);
-      } else {
-        console.error('Failed to fetch chain comparison:', chainComparisonData.reason);
-      }
-
       // Handle total value
       if (totalValueData.status === 'fulfilled') {
         setTotalValue(totalValueData.value);
@@ -71,7 +60,7 @@ export const useDashboardData = (): DashboardData => {
       }
 
       // Check if all requests failed
-      const allFailed = [balancesData, transactionsData, chainComparisonData, totalValueData]
+      const allFailed = [balancesData, transactionsData, totalValueData]
         .every(result => result.status === 'rejected');
       
       if (allFailed) {
@@ -99,7 +88,6 @@ export const useDashboardData = (): DashboardData => {
   return {
     balances,
     transactions,
-    chainComparison,
     totalValue,
     isLoading,
     error,

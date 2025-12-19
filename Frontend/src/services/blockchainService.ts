@@ -118,16 +118,6 @@ export interface Transaction {
   input?: string;
 }
 
-export interface ChainComparison {
-  chain: string;
-  speed: string;
-  cost: string;
-  efficiency: number;
-  avgBlockTime: number;
-  avgGasPrice: string;
-  txCount: number;
-}
-
 class BlockchainService {
   private providers: Map<string, ethers.JsonRpcProvider> = new Map();
   private priceCache: Map<string, { price: number; timestamp: number }> = new Map();
@@ -633,36 +623,7 @@ class BlockchainService {
     return sortedTxs;
   }
 
-  // Get chain comparison data
-  async getChainComparison(): Promise<ChainComparison[]> {
-    const activeConfigs = this.getActiveConfigs();
-    
-    return Promise.all(Object.entries(activeConfigs).map(async ([key, config]) => {
-      const provider = this.getProvider(key);
-      const defaultReturn = { chain: config.name, speed: 'Unknown', cost: 'Unknown', efficiency: 0, avgBlockTime: 0, avgGasPrice: '0', txCount: 0 };
-      if (!provider) return defaultReturn;
 
-      try {
-        const currentBlock = await provider.getBlockNumber();
-        const [block, prevBlock, feeData] = await Promise.all([
-          provider.getBlock(currentBlock), provider.getBlock(currentBlock - 10), provider.getFeeData()
-        ]);
-        
-        const avgBlockTime = (block && prevBlock) ? (block.timestamp - prevBlock.timestamp) / 10 : 0;
-        const gasPriceGwei = parseFloat(ethers.formatUnits(feeData.gasPrice || BigInt(0), 'gwei'));
-        const speed = avgBlockTime < 5 ? 'Very Fast' : avgBlockTime < 15 ? 'Fast' : avgBlockTime > 30 ? 'Slow' : 'Moderate';
-        const cost = gasPriceGwei < 10 ? 'Low' : gasPriceGwei < 50 ? 'Medium' : 'High';
-        const speedScore = speed === 'Very Fast' ? 25 : speed === 'Fast' ? 20 : speed === 'Moderate' ? 10 : 0;
-        const costScore = cost === 'Low' ? 25 : cost === 'Medium' ? 15 : 5;
-        const efficiency = Math.min(50 + speedScore + costScore, 100);
-
-        return { chain: config.name, speed, cost, efficiency, avgBlockTime, avgGasPrice: gasPriceGwei.toFixed(2), txCount: currentBlock };
-      } catch (error) {
-        console.error(`Failed to get chain comparison for ${config.name}:`, error);
-        return defaultReturn;
-      }
-    }));
-  }
 
   // Format timestamp to relative time
   private formatTimeAgo(timestamp: number): string {

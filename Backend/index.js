@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Replace with your Alchemy API Key
+
 const apiKey = "ivn1pyvI9XKDlq_0bKxTj";
 const baseURL = `https://eth-mainnet.g.alchemy.com/v2/${apiKey}`;
 const sepURL = `https://eth-sepolia.g.alchemy.com/v2/${apiKey}`;

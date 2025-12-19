@@ -13,7 +13,7 @@ import { blockchainService } from '@/services/blockchainService';
 
 const Dashboard = () => {
   const { address, isConnected } = useWallet();
-  const { balances, transactions, chainComparison, totalValue, isLoading, error, refetch } = useDashboardData();
+  const { balances, transactions, totalValue, isLoading, error, refetch } = useDashboardData();
 
   const getTransactionTypeInfo = (tx: typeof transactions[0]) => {
     if (tx.type === 'contract-deployment' || tx.isContractCreation) {
@@ -325,66 +325,6 @@ const Dashboard = () => {
                       ? "No transactions found. This wallet may not have any transaction history yet."
                       : "Connect your wallet to view your transaction history."}
                   </AlertDescription>
-                </Alert>
-              )}
-            </div>
-          </MotionCard>
-
-          {/* Chain Comparison */}
-          <MotionCard delay={0.4}>
-            <div className="glass-card p-6 rounded-xl">
-              <h2 className="text-2xl font-bold mb-6">Chain Comparison</h2>
-              
-              {isLoading && !chainComparison.length ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {Array.from({ length: 3 }, (_, i) => (
-                    <div key={i} className="glass-card-hover p-4 rounded-lg">
-                      <Skeleton className="h-6 w-24 mb-4" />
-                      <div className="space-y-3">
-                        {Array.from({ length: 3 }, (_, j) => <Skeleton key={j} className="h-4 w-full" />)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : chainComparison.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {chainComparison.map((chain) => (
-                    <div key={chain.chain} className="glass-card-hover p-4 rounded-lg">
-                      <h3 className="font-semibold mb-4">{chain.chain}</h3>
-                      <div className="space-y-3">
-                        {[
-                          { label: 'Speed', value: chain.speed, sub: `Block Time: ${chain.avgBlockTime.toFixed(1)}s` },
-                          { label: 'Cost', value: chain.cost, sub: `Avg Gas: ${chain.avgGasPrice} Gwei` },
-                          { label: 'Efficiency', value: `${chain.efficiency}%`, isProgress: true }
-                        ].map(({ label, value, sub, isProgress }, i) => (
-                          <div key={i}>
-                            <div className="flex justify-between text-sm mb-1">
-                              <span className="text-muted-foreground">{label}</span>
-                              <span className="font-medium">{value}</span>
-                            </div>
-                            {isProgress ? (
-                              <div className="w-full bg-muted rounded-full h-2">
-                                <div
-                                  className="bg-gradient-to-r from-primary to-secondary h-2 rounded-full transition-all duration-500"
-                                  style={{ width: `${chain.efficiency}%` }}
-                                />
-                              </div>
-                            ) : (
-                              <div className="flex justify-between text-xs text-muted-foreground">
-                                <span>{sub?.split(':')[0]}</span>
-                                <span>{sub?.split(':')[1]}</span>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>Chain comparison data is currently unavailable.</AlertDescription>
                 </Alert>
               )}
             </div>
