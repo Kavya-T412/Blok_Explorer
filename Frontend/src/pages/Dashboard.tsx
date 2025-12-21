@@ -127,7 +127,7 @@ const Dashboard = () => {
                   <Skeleton className="h-10 w-48" />
                 ) : (
                   <p className="text-3xl font-bold gradient-text">
-                    ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ${(totalValue && isFinite(totalValue) ? totalValue : 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 )}
                 {address && (
@@ -322,7 +322,14 @@ const Dashboard = () => {
                   {isConnected ? <AlertCircle className="h-4 w-4" /> : <Wallet className="h-4 w-4" />}
                   <AlertDescription>
                     {isConnected 
-                      ? "No transactions found. This wallet may not have any transaction history yet."
+                      ? (
+                        <>
+                          No transactions found in the current network mode. 
+                          {typeof window !== 'undefined' && localStorage.getItem('useTestnet') === 'true' 
+                            ? ' Switch to Mainnet in Settings to view mainnet transactions.'
+                            : ' Switch to Testnet in Settings to view testnet transactions.'}
+                        </>
+                      )
                       : "Connect your wallet to view your transaction history."}
                   </AlertDescription>
                 </Alert>

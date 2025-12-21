@@ -18,11 +18,16 @@ const bnbURL = `https://bnb-mainnet.g.alchemy.com/v2/${apiKey}`;
 const tbnbURL = `https://bnb-testnet.g.alchemy.com/v2/${apiKey}`;
 
 // Main function to fetch transaction history
-async function getTransactionHistory(walletAddress) {
+async function getTransactionHistory(walletAddress, networkMode = 'mainnet') {
   try {
     // Validate wallet address
     if (!walletAddress || !walletAddress.match(/^0x[a-fA-F0-9]{40}$/)) {
       throw new Error('Invalid wallet address format');
+    }
+
+    // Validate network mode
+    if (!['mainnet', 'testnet'].includes(networkMode)) {
+      throw new Error('Invalid network mode. Must be "mainnet" or "testnet"');
     }
 
     // Categories for ETH mainnet and testnets, and Polygon Mainnet (support 'internal')
@@ -30,14 +35,19 @@ async function getTransactionHistory(walletAddress) {
     // Categories for networks without 'internal' support
     const standardCategories = ["external", "erc20", "erc721", "erc1155"];
 
-    const networks = [
-      { name: 'Ethereum Mainnet', url: baseURL, categories: ethMaticCategories },
-      { name: 'Ethereum Sepolia', url: sepURL, categories: ethMaticCategories },
-      { name: 'Polygon Mainnet', url: polyURL, categories: ethMaticCategories },
-      { name: 'Polygon Amoy', url: amoyUrl, categories: standardCategories },
-      { name: 'BNB Mainnet', url: bnbURL, categories: standardCategories },
-      { name: 'BNB Testnet', url: tbnbURL, categories: standardCategories }
+    const allNetworks = [
+      { name: 'Ethereum Mainnet', url: baseURL, categories: ethMaticCategories, type: 'mainnet' },
+      { name: 'Ethereum Sepolia', url: sepURL, categories: ethMaticCategories, type: 'testnet' },
+      { name: 'Polygon Mainnet', url: polyURL, categories: ethMaticCategories, type: 'mainnet' },
+      { name: 'Polygon Amoy', url: amoyUrl, categories: standardCategories, type: 'testnet' },
+      { name: 'BNB Mainnet', url: bnbURL, categories: standardCategories, type: 'mainnet' },
+      { name: 'BNB Testnet', url: tbnbURL, categories: standardCategories, type: 'testnet' }
     ];
+
+    // Filter networks based on the network mode
+    const networks = allNetworks.filter(network => network.type === networkMode);
+    
+    console.log(`\n🔍 Filtering for ${networkMode.toUpperCase()} networks only`);
 
     const allTransactions = [];
 
@@ -220,14 +230,21 @@ app.get('/api/health', (req, res) => {
 app.get('/api/transactions/:address', async (req, res) => {
   try {
     const { address } = req.params;
+    const { mode } = req.query; // Get network mode from query params (mainnet or testnet)
     
-    console.log(`\n📡 API Request: Fetching transactions for ${address}`);
+    // Default to mainnet if mode is not specified
+    const networkMode = mode && ['mainnet', 'testnet'].includes(mode.toLowerCase()) 
+      ? mode.toLowerCase() 
+      : 'mainnet';
     
-    const transactions = await getTransactionHistory(address);
+    console.log(`\n📡 API Request: Fetching ${networkMode.toUpperCase()} transactions for ${address}`);
+    
+    const transactions = await getTransactionHistory(address, networkMode);
     
     res.json({
       success: true,
       address: address,
+      networkMode: networkMode,
       totalTransactions: transactions.length,
       transactions: transactions
     });
@@ -244,5 +261,6 @@ app.get('/api/transactions/:address', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`\n🚀 Transaction History API Server running on port ${PORT}`);
   console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`📍 Get transactions: http://localhost:${PORT}/api/transactions/:address\n`);
+  console.log(`📍 Get transactions: http://localhost:${PORT}/api/transactions/:address?mode=mainnet`);
+  console.log(`📍                    http://localhost:${PORT}/api/transactions/:address?mode=testnet\n`);
 });

@@ -31,10 +31,9 @@ export const useDashboardData = (): DashboardData => {
     setError(null);
 
     try {
-      // Fetch all data in parallel - get ALL transactions (no limit)
-      const [balancesData, transactionsData, totalValueData] = await Promise.allSettled([
+      // Fetch balances and total value first
+      const [balancesData, totalValueData] = await Promise.allSettled([
         blockchainService.getAllBalances(address),
-        blockchainService.getAllTransactions(address, forceRefresh), // Pass forceRefresh flag
         blockchainService.getTotalValue(address),
       ]);
 
@@ -43,13 +42,11 @@ export const useDashboardData = (): DashboardData => {
         setBalances(balancesData.value);
       } else {
         console.error('Failed to fetch balances:', balancesData.reason);
-      }
-
-      // Handle transactions
-      if (transactionsData.status === 'fulfilled') {
-        setTransactions(transactionsData.value);
-      } else {
-        console.error('Failed to fetch transactions:', transactionsData.reason);
+        if (balancesData.reason?.message?.includes('Rate limit')) {
+          setError('Rate limit exceeded. Please wait a moment and try again.');
+          setIsLoading(false);
+          return;
+        }
       }
 
       // Handle total value
@@ -59,16 +56,33 @@ export const useDashboardData = (): DashboardData => {
         console.error('Failed to fetch total value:', totalValueData.reason);
       }
 
-      // Check if all requests failed
-      const allFailed = [balancesData, transactionsData, totalValueData]
-        .every(result => result.status === 'rejected');
+      // Fetch transactions separately (can take longer)
+      try {
+        const transactionsData = await blockchainService.getAllTransactions(address, forceRefresh);
+        setTransactions(transactionsData);
+      } catch (txError: any) {
+        console.error('Failed to fetch transactions:', txError);
+        if (txError?.message?.includes('Rate limit')) {
+          setError('Rate limit exceeded while fetching transactions. Please wait a moment and try again.');
+        }
+        // Don't fail completely, just show empty transactions
+        setTransactions([]);
+      }
+
+      // Check if all balance/value requests failed
+      const balancesFailed = balancesData.status === 'rejected';
+      const valueFailed = totalValueData.status === 'rejected';
       
-      if (allFailed) {
+      if (balancesFailed && valueFailed) {
         setError('Failed to fetch blockchain data. Please check your connection and try again.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching dashboard data:', err);
-      setError('An unexpected error occurred. Please try again.');
+      if (err?.message?.includes('Rate limit')) {
+        setError('Rate limit exceeded. Please wait a moment and try again.');
+      } else {
+        setError('An unexpected error occurred. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
