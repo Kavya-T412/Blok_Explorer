@@ -45,12 +45,68 @@ const MAINNET_CONFIGS = {
     decimals: 18,
     color: 'from-yellow-500 to-orange-500',
   },
+  arbitrum: {
+    chainId: 42161,
+    name: 'Arbitrum',
+    symbol: 'ETH',
+    rpcUrl: 'https://arbitrum-one-rpc.publicnode.com',
+    fallbackRpcUrls: [
+      'https://arb1.arbitrum.io/rpc',
+      'https://1rpc.io/arb',
+      'https://arbitrum.llamarpc.com'
+    ],
+    explorer: 'https://arbiscan.io',
+    decimals: 18,
+    color: 'from-blue-400 to-cyan-400',
+  },
+  optimism: {
+    chainId: 10,
+    name: 'Optimism',
+    symbol: 'ETH',
+    rpcUrl: 'https://optimism-rpc.publicnode.com',
+    fallbackRpcUrls: [
+      'https://mainnet.optimism.io',
+      'https://1rpc.io/op',
+      'https://optimism.llamarpc.com'
+    ],
+    explorer: 'https://optimistic.etherscan.io',
+    decimals: 18,
+    color: 'from-red-500 to-pink-500',
+  },
+  base: {
+    chainId: 8453,
+    name: 'Base',
+    symbol: 'ETH',
+    rpcUrl: 'https://base-rpc.publicnode.com',
+    fallbackRpcUrls: [
+      'https://mainnet.base.org',
+      'https://1rpc.io/base',
+      'https://base.llamarpc.com'
+    ],
+    explorer: 'https://basescan.org',
+    decimals: 18,
+    color: 'from-blue-600 to-indigo-600',
+  },
+  avalanche: {
+    chainId: 43114,
+    name: 'Avalanche',
+    symbol: 'AVAX',
+    rpcUrl: 'https://avalanche-c-chain-rpc.publicnode.com',
+    fallbackRpcUrls: [
+      'https://api.avax.network/ext/bc/C/rpc',
+      'https://1rpc.io/avax/c',
+      'https://avalanche.drpc.org'
+    ],
+    explorer: 'https://snowtrace.io',
+    decimals: 18,
+    color: 'from-red-600 to-orange-600',
+  },
 };
 
 // Chain configurations with public RPC endpoints (Testnet)
 const TESTNET_CONFIGS = {
   sepolia: {
-    chainId: 11155111, // Sepolia
+    chainId: 11155111,
     name: 'Sepolia',
     symbol: 'ETH',
     rpcUrl: 'https://ethereum-sepolia-rpc.publicnode.com',
@@ -63,8 +119,21 @@ const TESTNET_CONFIGS = {
     decimals: 18,
     color: 'from-cyan-500 to-blue-500',
   },
+  hoodi: {
+    chainId: 17000,
+    name: 'Hoodi',
+    symbol: 'ETH',
+    rpcUrl: 'https://ethereum-holesky-rpc.publicnode.com',
+    fallbackRpcUrls: [
+      'https://holesky.drpc.org',
+      'https://1rpc.io/holesky'
+    ],
+    explorer: 'https://holesky.etherscan.io',
+    decimals: 18,
+    color: 'from-cyan-400 to-blue-400',
+  },
   polygonAmoy: {
-    chainId: 80002, // Amoy (new Polygon testnet)
+    chainId: 80002,
     name: 'Polygon Amoy',
     symbol: 'MATIC',
     rpcUrl: 'https://rpc-amoy.polygon.technology',
@@ -77,7 +146,7 @@ const TESTNET_CONFIGS = {
     color: 'from-purple-400 to-pink-400',
   },
   bscTestnet: {
-    chainId: 97, // BSC Testnet
+    chainId: 97,
     name: 'BSC Testnet',
     symbol: 'tBNB',
     rpcUrl: 'https://bsc-testnet-rpc.publicnode.com',
@@ -88,6 +157,58 @@ const TESTNET_CONFIGS = {
     explorer: 'https://testnet.bscscan.com',
     decimals: 18,
     color: 'from-yellow-400 to-orange-400',
+  },
+  arbitrumSepolia: {
+    chainId: 421614,
+    name: 'Arbitrum Sepolia',
+    symbol: 'ETH',
+    rpcUrl: 'https://arbitrum-sepolia-rpc.publicnode.com',
+    fallbackRpcUrls: [
+      'https://sepolia-rollup.arbitrum.io/rpc',
+      'https://arbitrum-sepolia.drpc.org'
+    ],
+    explorer: 'https://sepolia.arbiscan.io',
+    decimals: 18,
+    color: 'from-blue-300 to-cyan-300',
+  },
+  optimismSepolia: {
+    chainId: 11155420,
+    name: 'Optimism Sepolia',
+    symbol: 'ETH',
+    rpcUrl: 'https://optimism-sepolia-rpc.publicnode.com',
+    fallbackRpcUrls: [
+      'https://sepolia.optimism.io',
+      'https://optimism-sepolia.drpc.org'
+    ],
+    explorer: 'https://sepolia-optimism.etherscan.io',
+    decimals: 18,
+    color: 'from-red-400 to-pink-400',
+  },
+  baseSepolia: {
+    chainId: 84532,
+    name: 'Base Sepolia',
+    symbol: 'ETH',
+    rpcUrl: 'https://base-sepolia-rpc.publicnode.com',
+    fallbackRpcUrls: [
+      'https://sepolia.base.org',
+      'https://base-sepolia.drpc.org'
+    ],
+    explorer: 'https://sepolia.basescan.org',
+    decimals: 18,
+    color: 'from-blue-500 to-indigo-500',
+  },
+  avalancheFuji: {
+    chainId: 43113,
+    name: 'Avalanche Fuji',
+    symbol: 'AVAX',
+    rpcUrl: 'https://avalanche-fuji-c-chain-rpc.publicnode.com',
+    fallbackRpcUrls: [
+      'https://api.avax-test.network/ext/bc/C/rpc',
+      'https://avalanche-fuji.drpc.org'
+    ],
+    explorer: 'https://testnet.snowtrace.io',
+    decimals: 18,
+    color: 'from-red-500 to-orange-500',
   },
 };
 
@@ -100,28 +221,76 @@ const PRICE_API_COINGECKO = 'https://api.coingecko.com/api/v3/simple/price';
 const PRICE_API_COINCAP = 'https://api.coincap.io/v2/assets';
 const PRICE_API_CRYPTOCOMPARE = 'https://min-api.cryptocompare.com/data/price';
 const BACKEND_API_URL = 'http://localhost:3001'; // Backend transaction history API
+
+// Block explorer API domains for all supported chains
 const API_DOMAINS: Record<number, string> = {
-  1: 'api.etherscan.io', 11155111: 'api-sepolia.etherscan.io',
-  137: 'api.polygonscan.com', 80002: 'api-amoy.polygonscan.com',
-  56: 'api.bscscan.com', 97: 'api-testnet.bscscan.com',
+  // Mainnet explorers
+  1: 'api.etherscan.io',
+  137: 'api.polygonscan.com',
+  56: 'api.bscscan.com',
+  42161: 'api.arbiscan.io',
+  10: 'api-optimistic.etherscan.io',
+  8453: 'api.basescan.org',
+  43114: 'api.snowtrace.io',
+  // Testnet explorers
+  11155111: 'api-sepolia.etherscan.io',
+  17000: 'api-holesky.etherscan.io',
+  80002: 'api-amoy.polygonscan.com',
+  97: 'api-testnet.bscscan.com',
+  421614: 'api-sepolia.arbiscan.io',
+  11155420: 'api-sepolia-optimistic.etherscan.io',
+  84532: 'api-sepolia.basescan.org',
+  43113: 'api-testnet.snowtrace.io',
 };
+
 // API Keys (add your own from respective explorers)
 const API_KEYS: Record<number, string> = {
-  1: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K', // Add your Etherscan API key
-  11155111: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K', // Etherscan API key works for Sepolia too
-  137: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K', // Add your PolygonScan API key
-  80002: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K', // PolygonScan API key works for Amoy too
-  56: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K', // Add your BscScan API key
-  97: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K', // BscScan API key works for testnet too
+  // Ethereum Mainnet & Testnets
+  1: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  11155111: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  17000: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  // Polygon Mainnet & Testnets
+  137: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  80002: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  // BSC Mainnet & Testnet
+  56: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  97: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  // Arbitrum Mainnet & Testnet
+  42161: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  421614: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  // Optimism Mainnet & Testnet
+  10: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  11155420: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  // Base Mainnet & Testnet
+  8453: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  84532: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  // Avalanche Mainnet & Testnet
+  43114: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  43113: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
 };
-const COIN_IDS = { ETH: 'ethereum', MATIC: 'matic-network', BNB: 'binancecoin' };
-const COINCAP_IDS = { ETH: 'ethereum', MATIC: 'polygon', BNB: 'binance-coin' };
-// Map testnet symbols to mainnet equivalents (all uppercase keys)
+
+// CoinGecko/CoinCap IDs for price fetching
+const COIN_IDS = { 
+  ETH: 'ethereum', 
+  MATIC: 'matic-network', 
+  BNB: 'binancecoin',
+  AVAX: 'avalanche-2'
+};
+
+const COINCAP_IDS = { 
+  ETH: 'ethereum', 
+  MATIC: 'polygon', 
+  BNB: 'binance-coin',
+  AVAX: 'avalanche'
+};
+
+// Map testnet symbols to mainnet equivalents for price lookup
 const SYMBOL_MAP: Record<string, string> = { 
   'TBNB': 'BNB',  // Testnet BNB -> BNB
-  'ETH': 'ETH',   // Mainnet ETH
-  'MATIC': 'MATIC', // Mainnet MATIC
-  'BNB': 'BNB'    // Mainnet BNB
+  'ETH': 'ETH',
+  'MATIC': 'MATIC',
+  'BNB': 'BNB',
+  'AVAX': 'AVAX'
 };
 
 export interface Balance {
@@ -540,6 +709,7 @@ class BlockchainService {
       'ETH': 'ETH-USDT',
       'BNB': 'BNB-USDT',
       'MATIC': 'MATIC-USDT',
+      'AVAX': 'AVAX-USDT',
     };
     
     const kucoinSymbol = kucoinSymbols[symbol];
@@ -575,6 +745,7 @@ class BlockchainService {
       'ETH': 'ETHUSDT',
       'BNB': 'BNBUSDT',
       'MATIC': 'MATICUSDT',
+      'AVAX': 'AVAXUSDT',
     };
     
     const binanceSymbol = binanceSymbols[symbol];
@@ -1143,17 +1314,32 @@ class BlockchainService {
   // Get explorer URL for a transaction hash based on chain name
   getExplorerUrl(chainName: string, txHash: string): string {
     const explorerMap: Record<string, string> = {
+      // Mainnet
       'Ethereum': 'https://etherscan.io/tx/',
       'Ethereum Mainnet': 'https://etherscan.io/tx/',
-      'Sepolia': 'https://sepolia.etherscan.io/tx/',
-      'Ethereum Sepolia': 'https://sepolia.etherscan.io/tx/',
       'Polygon': 'https://polygonscan.com/tx/',
       'Polygon Mainnet': 'https://polygonscan.com/tx/',
-      'Polygon Amoy': 'https://amoy.polygonscan.com/tx/',
       'BSC': 'https://bscscan.com/tx/',
+      'BNB Chain': 'https://bscscan.com/tx/',
       'BNB Mainnet': 'https://bscscan.com/tx/',
+      'Arbitrum': 'https://arbiscan.io/tx/',
+      'Arbitrum One': 'https://arbiscan.io/tx/',
+      'Optimism': 'https://optimistic.etherscan.io/tx/',
+      'Base': 'https://basescan.org/tx/',
+      'Avalanche': 'https://snowtrace.io/tx/',
+      'Avalanche C-Chain': 'https://snowtrace.io/tx/',
+      // Testnet
+      'Sepolia': 'https://sepolia.etherscan.io/tx/',
+      'Ethereum Sepolia': 'https://sepolia.etherscan.io/tx/',
+      'Hoodi': 'https://holesky.etherscan.io/tx/',
+      'Ethereum Hoodi': 'https://holesky.etherscan.io/tx/',
+      'Polygon Amoy': 'https://amoy.polygonscan.com/tx/',
       'BSC Testnet': 'https://testnet.bscscan.com/tx/',
       'BNB Testnet': 'https://testnet.bscscan.com/tx/',
+      'Arbitrum Sepolia': 'https://sepolia.arbiscan.io/tx/',
+      'Optimism Sepolia': 'https://sepolia-optimism.etherscan.io/tx/',
+      'Base Sepolia': 'https://sepolia.basescan.org/tx/',
+      'Avalanche Fuji': 'https://testnet.snowtrace.io/tx/',
     };
     
     const baseUrl = explorerMap[chainName] || 'https://etherscan.io/tx/';

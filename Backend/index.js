@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const fetch = require('node-fetch');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -10,12 +11,29 @@ app.use(express.json());
 
 
 const apiKey = "ivn1pyvI9XKDlq_0bKxTj";
-const baseURL = `https://eth-mainnet.g.alchemy.com/v2/${apiKey}`;
-const sepURL = `https://eth-sepolia.g.alchemy.com/v2/${apiKey}`;
-const polyURL = `https://polygon-mainnet.g.alchemy.com/v2/${apiKey}`;
-const amoyUrl = `https://polygon-amoy.g.alchemy.com/v2/${apiKey}`;
-const bnbURL = `https://bnb-mainnet.g.alchemy.com/v2/${apiKey}`;
-const tbnbURL = `https://bnb-testnet.g.alchemy.com/v2/${apiKey}`;
+
+// Comprehensive Network Configuration for Mainnet
+const MAINNET_NETWORKS = {
+  ethereum: `https://eth-mainnet.g.alchemy.com/v2/${apiKey}`,
+  polygon: `https://polygon-mainnet.g.alchemy.com/v2/${apiKey}`,
+  bnb: `https://bnb-mainnet.g.alchemy.com/v2/${apiKey}`,
+  arbitrum: `https://arb-mainnet.g.alchemy.com/v2/${apiKey}`,
+  optimism: `https://opt-mainnet.g.alchemy.com/v2/${apiKey}`,
+  base: `https://base-mainnet.g.alchemy.com/v2/${apiKey}`,
+  avalanche: `https://avax-mainnet.g.alchemy.com/v2/${apiKey}`,
+};
+
+// Comprehensive Network Configuration for Testnet
+const TESTNET_NETWORKS = {
+  sepolia: `https://eth-sepolia.g.alchemy.com/v2/${apiKey}`,
+  hoodi: `https://eth-holesky.g.alchemy.com/v2/${apiKey}`,
+  polygonAmoy: `https://polygon-amoy.g.alchemy.com/v2/${apiKey}`,
+  bnbTestnet: `https://bnb-testnet.g.alchemy.com/v2/${apiKey}`,
+  arbitrumSepolia: `https://arb-sepolia.g.alchemy.com/v2/${apiKey}`,
+  optimismSepolia: `https://opt-sepolia.g.alchemy.com/v2/${apiKey}`,
+  baseSepolia: `https://base-sepolia.g.alchemy.com/v2/${apiKey}`,
+  avalancheFuji: `https://avax-fuji.g.alchemy.com/v2/${apiKey}`,
+};
 
 // Main function to fetch transaction history
 async function getTransactionHistory(walletAddress, networkMode = 'mainnet') {
@@ -30,30 +48,47 @@ async function getTransactionHistory(walletAddress, networkMode = 'mainnet') {
       throw new Error('Invalid network mode. Must be "mainnet" or "testnet"');
     }
 
-    // Categories for ETH mainnet and testnets, and Polygon Mainnet (support 'internal')
-    const ethMaticCategories = ["external", "internal", "erc20", "erc721", "erc1155"];
-    // Categories for networks without 'internal' support
+    // Categories for different networks
+    // IMPORTANT: Alchemy only supports 'internal' category for Ethereum (all testnets) and Polygon Mainnet
+    const ethCategories = ["external", "internal", "erc20", "erc721", "erc1155"];
+    const polygonMainnetCategories = ["external", "internal", "erc20", "erc721", "erc1155"];
+    // All other networks (L2s, BNB, Avalanche, Polygon testnets) don't support 'internal'
     const standardCategories = ["external", "erc20", "erc721", "erc1155"];
 
-    const allNetworks = [
-      { name: 'Ethereum Mainnet', url: baseURL, categories: ethMaticCategories, type: 'mainnet' },
-      { name: 'Ethereum Sepolia', url: sepURL, categories: ethMaticCategories, type: 'testnet' },
-      { name: 'Polygon Mainnet', url: polyURL, categories: ethMaticCategories, type: 'mainnet' },
-      { name: 'Polygon Amoy', url: amoyUrl, categories: standardCategories, type: 'testnet' },
-      { name: 'BNB Mainnet', url: bnbURL, categories: standardCategories, type: 'mainnet' },
-      { name: 'BNB Testnet', url: tbnbURL, categories: standardCategories, type: 'testnet' }
-    ];
-
-    // Filter networks based on the network mode
-    const networks = allNetworks.filter(network => network.type === networkMode);
+    // Build comprehensive network list
+    const allNetworks = [];
     
-    console.log(`\n🔍 Filtering for ${networkMode.toUpperCase()} networks only`);
+    if (networkMode === 'mainnet') {
+      allNetworks.push(
+        { name: 'Ethereum Mainnet', url: MAINNET_NETWORKS.ethereum, categories: ethCategories },
+        { name: 'Polygon Mainnet', url: MAINNET_NETWORKS.polygon, categories: polygonMainnetCategories },
+        { name: 'BNB Chain', url: MAINNET_NETWORKS.bnb, categories: standardCategories },
+        { name: 'Arbitrum One', url: MAINNET_NETWORKS.arbitrum, categories: standardCategories },
+        { name: 'Optimism', url: MAINNET_NETWORKS.optimism, categories: standardCategories },
+        { name: 'Base', url: MAINNET_NETWORKS.base, categories: standardCategories },
+        { name: 'Avalanche C-Chain', url: MAINNET_NETWORKS.avalanche, categories: standardCategories }
+      );
+    } else {
+      allNetworks.push(
+        { name: 'Ethereum Sepolia', url: TESTNET_NETWORKS.sepolia, categories: ethCategories },
+        { name: 'Ethereum Hoodi', url: TESTNET_NETWORKS.hoodi, categories: ethCategories },
+        { name: 'Polygon Amoy', url: TESTNET_NETWORKS.polygonAmoy, categories: standardCategories },
+        { name: 'BNB Testnet', url: TESTNET_NETWORKS.bnbTestnet, categories: standardCategories },
+        { name: 'Arbitrum Sepolia', url: TESTNET_NETWORKS.arbitrumSepolia, categories: standardCategories },
+        { name: 'Optimism Sepolia', url: TESTNET_NETWORKS.optimismSepolia, categories: standardCategories },
+        { name: 'Base Sepolia', url: TESTNET_NETWORKS.baseSepolia, categories: standardCategories },
+        { name: 'Avalanche Fuji', url: TESTNET_NETWORKS.avalancheFuji, categories: standardCategories }
+      );
+    }
+    
+    console.log(`\n🔍 Fetching transactions for ${networkMode.toUpperCase()} networks (${allNetworks.length} chains)`);
 
     const allTransactions = [];
 
-    for (const network of networks) {
+    for (const network of allNetworks) {
       try {
         console.log(`\n========== Fetching from ${network.name} ==========`);
+        console.log(`📋 Categories: [${network.categories.join(', ')}]`);
         
         // Fetch both 'from' and 'to' transactions
         const fromData = {
@@ -84,24 +119,34 @@ async function getTransactionHistory(walletAddress, networkMode = 'mainnet') {
           }]
         };
 
-        // Fetch sent transactions
-        const fromResponse = await fetch(network.url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(fromData)
-        });
+        // Fetch sent transactions with timeout
+        const fromResponse = await Promise.race([
+          fetch(network.url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(fromData)
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Request timeout (30s)')), 30000)
+          )
+        ]);
 
-        // Fetch received transactions
-        const toResponse = await fetch(network.url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(toData)
-        });
+        // Fetch received transactions with timeout
+        const toResponse = await Promise.race([
+          fetch(network.url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(toData)
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Request timeout (30s)')), 30000)
+          )
+        ]);
 
         let networkTransactions = [];
 
         // Process 'from' transactions
-        if (fromResponse.ok) {
+        if (fromResponse && fromResponse.ok) {
           const contentType = fromResponse.headers.get('content-type');
           if (contentType && contentType.includes('application/json')) {
             const fromResult = await fromResponse.json();
@@ -116,10 +161,12 @@ async function getTransactionHistory(walletAddress, networkMode = 'mainnet') {
               })));
             }
           }
+        } else if (fromResponse) {
+          console.log(`⚠️  ${network.name} (Sent): HTTP ${fromResponse.status} - ${fromResponse.statusText}`);
         }
 
         // Process 'to' transactions
-        if (toResponse.ok) {
+        if (toResponse && toResponse.ok) {
           const contentType = toResponse.headers.get('content-type');
           if (contentType && contentType.includes('application/json')) {
             const toResult = await toResponse.json();
@@ -134,6 +181,8 @@ async function getTransactionHistory(walletAddress, networkMode = 'mainnet') {
               })));
             }
           }
+        } else if (toResponse) {
+          console.log(`⚠️  ${network.name} (Received): HTTP ${toResponse.status} - ${toResponse.statusText}`);
         }
 
         // Remove duplicates based on hash
@@ -175,7 +224,18 @@ async function getTransactionHistory(walletAddress, networkMode = 'mainnet') {
           console.log(`⚠️  ${network.name}: No transactions found`);
         }
       } catch (err) {
-        console.log(`❌ ${network.name}: ${err.message}`);
+        // Enhanced error logging for better debugging
+        if (err.type === 'invalid-json' || err.message?.includes('invalid json')) {
+          console.log(`❌ ${network.name}: Invalid JSON response from API`);
+        } else if (err.code === 'ENOTFOUND' || err.message?.includes('ENOTFOUND')) {
+          console.log(`❌ ${network.name}: Network unreachable - DNS resolution failed`);
+        } else if (err.code === 'ECONNREFUSED' || err.message?.includes('ECONNREFUSED')) {
+          console.log(`❌ ${network.name}: Connection refused`);
+        } else if (err.message?.includes('fetch failed')) {
+          console.log(`❌ ${network.name}: Network request failed - possible endpoint or network issue`);
+        } else {
+          console.log(`❌ ${network.name}: ${err.message}`);
+        }
       }
     }
 

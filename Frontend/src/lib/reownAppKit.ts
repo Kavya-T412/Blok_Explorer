@@ -1,5 +1,21 @@
 import { createAppKit } from '@reown/appkit'
-import { mainnet, arbitrum, polygon, bsc, sepolia, polygonAmoy, bscTestnet } from '@reown/appkit/networks'
+import { 
+  mainnet, 
+  arbitrum, 
+  polygon, 
+  bsc, 
+  optimism,
+  base,
+  avalanche,
+  sepolia, 
+  polygonAmoy, 
+  bscTestnet,
+  arbitrumSepolia,
+  optimismSepolia,
+  baseSepolia,
+  avalancheFuji,
+  holesky
+} from '@reown/appkit/networks'
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
 import type { AppKitNetwork } from '@reown/appkit/networks'
 
@@ -9,19 +25,33 @@ const projectId = '6e8cdec996f31d6e5a7c3a2fd8a95189'
 // Environment variable to switch between mainnet and testnet
 const USE_TESTNET = import.meta.env.VITE_USE_TESTNET === 'true' || false;
 
-// Define all networks (mainnet and testnet)
-export const mainnetNetworks: [AppKitNetwork, ...AppKitNetwork[]] = [mainnet, polygon, bsc, arbitrum];
-export const testnetNetworks: [AppKitNetwork, ...AppKitNetwork[]] = [sepolia, polygonAmoy, bscTestnet];
-
-// Combine all networks for wallet support
-const allNetworks: [AppKitNetwork, ...AppKitNetwork[]] = [
+// Define all mainnet networks
+export const mainnetNetworks: [AppKitNetwork, ...AppKitNetwork[]] = [
   mainnet, 
   polygon, 
   bsc, 
   arbitrum,
-  sepolia, 
+  optimism,
+  base,
+  avalanche
+];
+
+// Define all testnet networks
+export const testnetNetworks: [AppKitNetwork, ...AppKitNetwork[]] = [
+  sepolia,
+  holesky,
   polygonAmoy, 
-  bscTestnet
+  bscTestnet,
+  arbitrumSepolia,
+  optimismSepolia,
+  baseSepolia,
+  avalancheFuji
+];
+
+// Combine all networks for wallet support
+const allNetworks: [AppKitNetwork, ...AppKitNetwork[]] = [
+  ...mainnetNetworks,
+  ...testnetNetworks
 ];
 
 // Select networks based on environment
@@ -36,7 +66,7 @@ export const wagmiAdapter = new WagmiAdapter({
 // 3. Configure the metadata
 const metadata = {
   name: 'ChainExplorer',
-  description: 'Blockchain Explorer with Wallet Integration',
+  description: 'Multi-Chain Blockchain Explorer with Wallet Integration',
   url: window.location.origin,
   icons: ['https://avatars.githubusercontent.com/u/179229932']
 }

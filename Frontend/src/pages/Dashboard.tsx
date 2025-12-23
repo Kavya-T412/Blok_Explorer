@@ -15,6 +15,48 @@ const Dashboard = () => {
   const { address, isConnected } = useWallet();
   const { balances, transactions, totalValue, isLoading, error, refetch } = useDashboardData();
 
+  const getChainStyle = (chainName: string) => {
+    const chainStyles: Record<string, { gradient: string; badge: string; icon: string }> = {
+      // Ethereum networks
+      'Ethereum': { gradient: 'from-blue-500 to-purple-500', badge: 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 border-blue-500/50 text-blue-200', icon: '⟠' },
+      'Ethereum Mainnet': { gradient: 'from-blue-500 to-purple-500', badge: 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 border-blue-500/50 text-blue-200', icon: '⟠' },
+      'Sepolia': { gradient: 'from-cyan-500 to-blue-500', badge: 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border-cyan-500/50 text-cyan-200', icon: '⟠' },
+      'Ethereum Sepolia': { gradient: 'from-cyan-500 to-blue-500', badge: 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border-cyan-500/50 text-cyan-200', icon: '⟠' },
+      'Hoodi': { gradient: 'from-cyan-400 to-blue-400', badge: 'bg-gradient-to-r from-cyan-400/20 to-blue-400/20 border-cyan-400/50 text-cyan-200', icon: '⟠' },
+      'Ethereum Hoodi': { gradient: 'from-cyan-400 to-blue-400', badge: 'bg-gradient-to-r from-cyan-400/20 to-blue-400/20 border-cyan-400/50 text-cyan-200', icon: '⟠' },
+      // Polygon networks
+      'Polygon': { gradient: 'from-purple-500 to-pink-500', badge: 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-purple-500/50 text-purple-200', icon: '⬡' },
+      'Polygon Mainnet': { gradient: 'from-purple-500 to-pink-500', badge: 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-purple-500/50 text-purple-200', icon: '⬡' },
+      'Polygon Amoy': { gradient: 'from-purple-400 to-pink-400', badge: 'bg-gradient-to-r from-purple-400/20 to-pink-400/20 border-purple-400/50 text-purple-200', icon: '⬡' },
+      // BNB networks
+      'BSC': { gradient: 'from-yellow-500 to-orange-500', badge: 'bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border-yellow-500/50 text-yellow-200', icon: '◆' },
+      'BNB Chain': { gradient: 'from-yellow-500 to-orange-500', badge: 'bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border-yellow-500/50 text-yellow-200', icon: '◆' },
+      'BNB Mainnet': { gradient: 'from-yellow-500 to-orange-500', badge: 'bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border-yellow-500/50 text-yellow-200', icon: '◆' },
+      'BNB Testnet': { gradient: 'from-yellow-400 to-orange-400', badge: 'bg-gradient-to-r from-yellow-400/20 to-orange-400/20 border-yellow-400/50 text-yellow-200', icon: '◆' },
+      'BSC Testnet': { gradient: 'from-yellow-400 to-orange-400', badge: 'bg-gradient-to-r from-yellow-400/20 to-orange-400/20 border-yellow-400/50 text-yellow-200', icon: '◆' },
+      // Arbitrum networks
+      'Arbitrum': { gradient: 'from-blue-400 to-cyan-400', badge: 'bg-gradient-to-r from-blue-400/20 to-cyan-400/20 border-blue-400/50 text-blue-200', icon: '▲' },
+      'Arbitrum One': { gradient: 'from-blue-400 to-cyan-400', badge: 'bg-gradient-to-r from-blue-400/20 to-cyan-400/20 border-blue-400/50 text-blue-200', icon: '▲' },
+      'Arbitrum Sepolia': { gradient: 'from-blue-300 to-cyan-300', badge: 'bg-gradient-to-r from-blue-300/20 to-cyan-300/20 border-blue-300/50 text-blue-200', icon: '▲' },
+      // Optimism networks
+      'Optimism': { gradient: 'from-red-500 to-pink-500', badge: 'bg-gradient-to-r from-red-500/20 to-pink-500/20 border-red-500/50 text-red-200', icon: '🔴' },
+      'Optimism Sepolia': { gradient: 'from-red-400 to-pink-400', badge: 'bg-gradient-to-r from-red-400/20 to-pink-400/20 border-red-400/50 text-red-200', icon: '🔴' },
+      // Base networks
+      'Base': { gradient: 'from-blue-600 to-indigo-600', badge: 'bg-gradient-to-r from-blue-600/20 to-indigo-600/20 border-blue-600/50 text-blue-200', icon: '🔵' },
+      'Base Sepolia': { gradient: 'from-blue-500 to-indigo-500', badge: 'bg-gradient-to-r from-blue-500/20 to-indigo-500/20 border-blue-500/50 text-blue-200', icon: '🔵' },
+      // Avalanche networks
+      'Avalanche': { gradient: 'from-red-600 to-orange-600', badge: 'bg-gradient-to-r from-red-600/20 to-orange-600/20 border-red-600/50 text-red-200', icon: '❄' },
+      'Avalanche C-Chain': { gradient: 'from-red-600 to-orange-600', badge: 'bg-gradient-to-r from-red-600/20 to-orange-600/20 border-red-600/50 text-red-200', icon: '❄' },
+      'Avalanche Fuji': { gradient: 'from-red-500 to-orange-500', badge: 'bg-gradient-to-r from-red-500/20 to-orange-500/20 border-red-500/50 text-red-200', icon: '❄' },
+    };
+    
+    return chainStyles[chainName] || { 
+      gradient: 'from-gray-500 to-gray-600', 
+      badge: 'bg-gray-500/20 border-gray-500/50 text-gray-200',
+      icon: '●'
+    };
+  };
+
   const getTransactionTypeInfo = (tx: typeof transactions[0]) => {
     if (tx.type === 'contract-deployment' || tx.isContractCreation) {
       return { 
@@ -217,6 +259,7 @@ const Dashboard = () => {
                       {transactions.map((tx) => {
                         const { Icon, variant, label, description } = getTransactionTypeInfo(tx);
                         const directionInfo = getDirectionInfo(tx);
+                        const chainStyle = getChainStyle(tx.chain);
                         
                         // Safely parse value and symbol
                         const valueParts = (tx.value || '0 ETH').split(' ');
@@ -304,7 +347,14 @@ const Dashboard = () => {
                                 <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                               </a>
                             </td>
-                            <td className="py-4 px-2"><Badge variant="outline">{tx.chain}</Badge></td>
+                            <td className="py-4 px-2">
+                              <Badge 
+                                variant="outline" 
+                                className={`${chainStyle.badge} font-semibold border-2 px-3 py-1`}
+                              >
+                                {tx.chain}
+                              </Badge>
+                            </td>
                             <td className="py-4 px-2">
                               <Badge variant={tx.status === 'success' ? 'default' : tx.status === 'pending' ? 'secondary' : 'destructive'}>
                                 {tx.status}
