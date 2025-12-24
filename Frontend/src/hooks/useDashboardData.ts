@@ -31,15 +31,27 @@ export const useDashboardData = (): DashboardData => {
     setError(null);
 
     try {
-      // Fetch balances and total value first
-      const [balancesData, totalValueData] = await Promise.allSettled([
+      // OPTIMIZATION: Fetch balances and transactions in parallel for faster load
+      // Total value is calculated from balances, so we fetch it after balances
+      const [balancesData, transactionsData] = await Promise.allSettled([
         blockchainService.getAllBalances(address),
-        blockchainService.getTotalValue(address),
+        blockchainService.getAllTransactions(address, forceRefresh),
       ]);
 
       // Handle balances
       if (balancesData.status === 'fulfilled') {
         setBalances(balancesData.value);
+        
+        // Calculate total value from fetched balances (faster than separate API call)
+        const total = balancesData.value.reduce((sum, balance) => {
+          const value = balance.usdValueNum;
+          if (value === undefined || value === null || isNaN(value) || !isFinite(value) || value < 0) {
+            return sum;
+          }
+          return Number((sum + value).toFixed(2));
+        }, 0);
+        
+        setTotalValue(isNaN(total) || !isFinite(total) || total < 0 ? 0 : Number(total.toFixed(2)));
       } else {
         console.error('Failed to fetch balances:', balancesData.reason);
         if (balancesData.reason?.message?.includes('Rate limit')) {
@@ -47,33 +59,23 @@ export const useDashboardData = (): DashboardData => {
           setIsLoading(false);
           return;
         }
+        setBalances([]);
+        setTotalValue(0);
       }
 
-      // Handle total value
-      if (totalValueData.status === 'fulfilled') {
-        setTotalValue(totalValueData.value);
+      // Handle transactions
+      if (transactionsData.status === 'fulfilled') {
+        setTransactions(transactionsData.value);
       } else {
-        console.error('Failed to fetch total value:', totalValueData.reason);
-      }
-
-      // Fetch transactions separately (can take longer)
-      try {
-        const transactionsData = await blockchainService.getAllTransactions(address, forceRefresh);
-        setTransactions(transactionsData);
-      } catch (txError: any) {
-        console.error('Failed to fetch transactions:', txError);
-        if (txError?.message?.includes('Rate limit')) {
+        console.error('Failed to fetch transactions:', transactionsData.reason);
+        if (transactionsData.reason?.message?.includes('Rate limit')) {
           setError('Rate limit exceeded while fetching transactions. Please wait a moment and try again.');
         }
-        // Don't fail completely, just show empty transactions
         setTransactions([]);
       }
 
-      // Check if all balance/value requests failed
-      const balancesFailed = balancesData.status === 'rejected';
-      const valueFailed = totalValueData.status === 'rejected';
-      
-      if (balancesFailed && valueFailed) {
+      // Check if both requests failed
+      if (balancesData.status === 'rejected' && transactionsData.status === 'rejected') {
         setError('Failed to fetch blockchain data. Please check your connection and try again.');
       }
     } catch (err: any) {
@@ -91,6 +93,33 @@ export const useDashboardData = (): DashboardData => {
   // Fetch data on mount and when address changes
   useEffect(() => {
     fetchData(false);
+  }, [fetchData]);
+
+  // Listen for custom network changes in localStorage
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      // Refresh data when custom networks are modified
+      if (e.key === 'blok_explorer_custom_networks') {
+        console.log('🔄 Custom networks changed, refreshing dashboard...');
+        fetchData(true); // Force refresh
+      }
+    };
+
+    // Listen for storage events (from other tabs/windows)
+    window.addEventListener('storage', handleStorageChange);
+
+    // Listen for custom event (from same tab)
+    const handleCustomEvent = () => {
+      console.log('🔄 Custom networks updated in same tab, refreshing dashboard...');
+      setTimeout(() => fetchData(true), 500); // Small delay to ensure localStorage is updated
+    };
+
+    window.addEventListener('customNetworksChanged', handleCustomEvent);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('customNetworksChanged', handleCustomEvent);
+    };
   }, [fetchData]);
 
   // Manual refresh function that forces cache clear

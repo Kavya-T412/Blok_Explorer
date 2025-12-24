@@ -10,12 +10,25 @@ import { useDashboardData } from '@/hooks/useDashboardData';
 import { useWallet } from '@/contexts/WalletContext';
 import { NetworkModeIndicator } from '@/components/NetworkModeToggle';
 import { blockchainService } from '@/services/blockchainService';
+import { getCustomNetworks } from '@/types/customNetworks';
 
 const Dashboard = () => {
   const { address, isConnected } = useWallet();
   const { balances, transactions, totalValue, isLoading, error, refetch } = useDashboardData();
 
   const getChainStyle = (chainName: string) => {
+    // Check if it's a custom network first
+    const customNetworks = getCustomNetworks();
+    const customNetwork = customNetworks.find(n => n.name === chainName);
+    
+    if (customNetwork) {
+      return {
+        gradient: customNetwork.color,
+        badge: `bg-gradient-to-r ${customNetwork.color} border-0 text-white opacity-80`,
+        icon: customNetwork.icon || '●'
+      };
+    }
+    
     const chainStyles: Record<string, { gradient: string; badge: string; icon: string }> = {
       // Ethereum networks
       'Ethereum': { gradient: 'from-blue-500 to-purple-500', badge: 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 border-blue-500/50 text-blue-200', icon: '⟠' },

@@ -1,4 +1,5 @@
 import { ethers } from 'ethers';
+import { getCustomNetworks, CustomNetwork, NetworkConfig } from '@/types/customNetworks';
 
 // Chain configurations with public RPC endpoints (Mainnet)
 // Using public RPC endpoints to avoid rate limiting
@@ -329,16 +330,19 @@ class BlockchainService {
   private providers: Map<string, ethers.JsonRpcProvider> = new Map();
   private fallbackProviders: Map<string, ethers.JsonRpcProvider[]> = new Map();
   private priceCache: Map<string, { price: number; timestamp: number }> = new Map();
+  private balanceCache: Map<string, { balance: Balance; timestamp: number }> = new Map();
   private transactionCache: Map<string, { transactions: Transaction[]; timestamp: number }> = new Map();
-  private readonly CACHE_DURATION = 60000; // 1 minute
-  private readonly TX_CACHE_DURATION = 30000; // 30 seconds for transactions
+  private readonly PRICE_CACHE_DURATION = 120000; // 2 minutes for prices
+  private readonly BALANCE_CACHE_DURATION = 30000; // 30 seconds for balances
+  private readonly TX_CACHE_DURATION = 60000; // 60 seconds for transactions
   private currentChainId: number | null = null;
   private pendingRequests: Map<string, Promise<Transaction[]>> = new Map();
+  private pendingBalanceRequests: Map<string, Promise<Balance | null>> = new Map();
   
-  // Rate limiting
+  // Rate limiting - optimized for faster parallel requests
   private requestQueue: Map<string, Promise<any>> = new Map();
   private lastRequestTime: Map<string, number> = new Map();
-  private readonly MIN_REQUEST_INTERVAL = 200; // 200ms between requests
+  private readonly MIN_REQUEST_INTERVAL = 100; // 100ms between requests (reduced from 200ms)
   private readonly MAX_RETRIES = 3;
   private readonly RETRY_DELAY = 1000; // Start with 1 second
 
@@ -458,12 +462,12 @@ class BlockchainService {
     try {
       // Quick health check with timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout (reduced from 3s)
       
       await Promise.race([
         primaryProvider.getBlockNumber(),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Timeout')), 3000)
+          setTimeout(() => reject(new Error('Timeout')), 2000)
         )
       ]);
       
@@ -478,7 +482,7 @@ class BlockchainService {
             await Promise.race([
               fallbackProvider.getBlockNumber(),
               new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Timeout')), 3000)
+                setTimeout(() => reject(new Error('Timeout')), 2000)
               )
             ]);
             return fallbackProvider;
@@ -516,6 +520,94 @@ class BlockchainService {
     
     console.log(`Active mode from settings: ${useTestnet ? 'TESTNET' : 'MAINNET'}`);
     return useTestnet ? TESTNET_CONFIGS : MAINNET_CONFIGS;
+  }
+
+  // Get custom networks filtered by type (mainnet or testnet)
+  private getActiveCustomNetworks(): CustomNetwork[] {
+    const useTestnet = typeof window !== 'undefined' 
+      ? localStorage.getItem('useTestnet') === 'true'
+      : false;
+    
+    const customNetworks = getCustomNetworks();
+    return customNetworks.filter(network => 
+      useTestnet ? network.type === 'testnet' : network.type === 'mainnet'
+    );
+  }
+
+  // Get combined configs (default + custom)
+  private getAllActiveConfigs(): Record<string, NetworkConfig> {
+    const baseConfigs = this.getActiveConfigs();
+    const customNetworks = this.getActiveCustomNetworks();
+    
+    // Convert custom networks to NetworkConfig format
+    const customConfigs: Record<string, NetworkConfig> = {};
+    customNetworks.forEach(network => {
+      customConfigs[network.id] = {
+        chainId: network.chainId,
+        name: network.name,
+        symbol: network.symbol,
+        rpcUrl: network.rpcUrl,
+        explorer: network.explorerUrl || '',
+        decimals: network.decimals,
+        color: network.color,
+        isCustom: true,
+        key: network.id,
+      };
+    });
+    
+    return { ...baseConfigs, ...customConfigs };
+  }
+
+  // Get or create provider for custom network
+  private getOrCreateCustomProvider(network: CustomNetwork): ethers.JsonRpcProvider {
+    const key = network.id;
+    let provider = this.providers.get(key);
+    
+    if (!provider) {
+      console.log(`🔧 Creating new provider for ${network.name} (${network.rpcUrl})`);
+      try {
+        const ethersNetwork = ethers.Network.from({
+          name: network.name.toLowerCase().replace(/\s+/g, '-'),
+          chainId: network.chainId,
+        });
+        
+        provider = new ethers.JsonRpcProvider(
+          network.rpcUrl,
+          ethersNetwork,
+          {
+            staticNetwork: ethersNetwork,
+            batchMaxCount: 1,
+          }
+        );
+        
+        this.providers.set(key, provider);
+        
+        // Initialize fallback providers if available
+        if (network.fallbackRpcUrls && network.fallbackRpcUrls.length > 0) {
+          const fallbackProviders = network.fallbackRpcUrls.map(url => 
+            new ethers.JsonRpcProvider(
+              url,
+              ethersNetwork,
+              {
+                staticNetwork: ethersNetwork,
+                batchMaxCount: 1,
+              }
+            )
+          );
+          this.fallbackProviders.set(key, fallbackProviders);
+          console.log(`✅ Provider created with ${fallbackProviders.length} fallback(s) for ${network.name}`);
+        } else {
+          console.log(`✅ Provider created successfully for ${network.name}`);
+        }
+      } catch (error: any) {
+        console.error(`❌ Failed to create provider for ${network.name}:`, error.message);
+        throw error;
+      }
+    } else {
+      console.log(`♻️ Using existing provider for ${network.name}`);
+    }
+    
+    return provider;
   }
 
   private getProvider(chain: string): ethers.JsonRpcProvider | null {
@@ -571,7 +663,7 @@ class BlockchainService {
     
     const cacheKey = mappedSymbol.toLowerCase();
     const cached = this.priceCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) return cached.price;
+    if (cached && Date.now() - cached.timestamp < this.PRICE_CACHE_DURATION) return cached.price;
     
     // Try multiple API providers in sequence
     const price = await this.fetchPriceFromAPIs(mappedSymbol);
@@ -780,104 +872,262 @@ class BlockchainService {
   async getBalance(address: string, chain: string, config: any): Promise<Balance | null> {
     if (!address) return null;
 
-    try {
-      const provider = await this.getProviderWithFallback(chain);
-      if (!provider) {
-        console.warn(`No provider available for ${config.name}`);
+    // Check cache first
+    const cacheKey = `${chain}-${address}`;
+    const cached = this.balanceCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.BALANCE_CACHE_DURATION) {
+      return cached.balance;
+    }
+
+    // Check if there's already a pending request for this balance
+    if (this.pendingBalanceRequests.has(cacheKey)) {
+      return this.pendingBalanceRequests.get(cacheKey)!;
+    }
+
+    // Create new request promise
+    const requestPromise = (async () => {
+      try {
+        const provider = await this.getProviderWithFallback(chain);
+        if (!provider) {
+          console.warn(`No provider available for ${config.name}`);
+          return null;
+        }
+
+        // Rate-limited request with error handling
+        const balanceWei = await this.makeRateLimitedRequest(
+          `balance-${chain}-${address}`,
+          async () => await provider.getBalance(address)
+        );
+
+        const balanceEth = ethers.formatEther(balanceWei);
+        const balanceNum = parseFloat(balanceEth);
+        
+        // Validate balance is a valid number
+        if (isNaN(balanceNum) || !isFinite(balanceNum) || balanceNum < 0) {
+          console.error(`Invalid balance for ${config.name}: ${balanceEth}`);
+          return null;
+        }
+        
+        // Check if this is a testnet
+        const isTestnet = Object.values(TESTNET_CONFIGS).some(c => c.chainId === config.chainId);
+        
+        // Fetch price (always returns a valid value - either from API or fallback)
+        const price = await this.fetchPrice(config.symbol, isTestnet);
+        
+        // Validate price is a valid number
+        if (isNaN(price) || !isFinite(price) || price <= 0) {
+          console.error(`Invalid price for ${config.symbol}: ${price}`);
+          return null;
+        }
+        
+        // Calculate USD value with proper precision
+        const usdValueNum = Number((balanceNum * price).toFixed(2));
+        
+        // Validate USD value
+        if (isNaN(usdValueNum) || !isFinite(usdValueNum) || usdValueNum < 0) {
+          console.error(`Invalid USD value for ${config.name}: balanceNum=${balanceNum}, price=${price}, result=${usdValueNum}`);
+          return null;
+        }
+        
+        // Format USD value - show for both mainnet and testnet
+        const formattedUsdValue = `$${usdValueNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        const usdValue = isTestnet ? `${formattedUsdValue} (Testnet)` : formattedUsdValue;
+
+        const result = {
+          chain: config.name,
+          symbol: config.symbol,
+          balance: balanceNum.toFixed(4),
+          usdValue,
+          usdValueNum, // Include both mainnet and testnet in portfolio total
+          color: config.color,
+          rawBalance: balanceWei.toString(),
+        };
+
+        // Cache the result
+        this.balanceCache.set(cacheKey, { balance: result, timestamp: Date.now() });
+
+        return result;
+      } catch (error: any) {
+        // Log error but don't spam console for network issues
+        if (error?.message?.includes('Rate limit')) {
+          console.warn(`⚠️ Rate limit for ${config.name}`);
+        } else if (error?.message?.includes('Unauthorized') || error?.message?.includes('API key')) {
+          console.warn(`⚠️ ${config.name}: RPC requires API key, skipping...`);
+        } else if (error?.code === 'NETWORK_ERROR' || error?.message?.includes('fetch')) {
+          console.warn(`⚠️ ${config.name}: Network error, skipping...`);
+        } else {
+          console.warn(`⚠️ Failed to get balance for ${config.name}:`, error.message || error);
+        }
         return null;
+      } finally {
+        this.pendingBalanceRequests.delete(cacheKey);
+      }
+    })();
+
+    this.pendingBalanceRequests.set(cacheKey, requestPromise);
+    return requestPromise;
+  }
+
+  // Get balances across all chains (including custom networks)
+  async getAllBalances(address: string): Promise<Balance[]> {
+    if (!address) return [];
+
+    console.log('🔍 Starting getAllBalances...');
+    
+    // Get active configs based on connected chain (default networks)
+    const activeConfigs = this.getActiveConfigs();
+    const chains = Object.entries(activeConfigs);
+    
+    // Get custom networks for current mode
+    const customNetworks = this.getActiveCustomNetworks();
+    
+    console.log(`📊 Fetching balances from ${chains.length} default networks and ${customNetworks.length} custom networks`);
+    
+    // OPTIMIZATION: Fetch all balances in parallel with batching to avoid overwhelming the API
+    const BATCH_SIZE = 5; // Process 5 networks at a time
+    const allBalances: Balance[] = [];
+    
+    // Fetch from default networks in batches
+    console.log('🌐 Fetching from default networks (parallel)...');
+    for (let i = 0; i < chains.length; i += BATCH_SIZE) {
+      const batch = chains.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.allSettled(
+        batch.map(([key, config]) => this.getBalance(address, key, config))
+      );
+      
+      batchResults.forEach((result, idx) => {
+        if (result.status === 'fulfilled' && result.value) {
+          allBalances.push(result.value);
+          console.log(`✅ Added balance for ${batch[idx][1].name}: ${result.value.balance} ${result.value.symbol}`);
+        } else if (result.status === 'rejected') {
+          console.log(`⚠️ Failed to fetch balance for ${batch[idx][1].name}`);
+        }
+      });
+    }
+    
+    // Fetch from custom networks in batches
+    if (customNetworks.length > 0) {
+      console.log(`🔧 Fetching from ${customNetworks.length} custom networks (parallel)...`);
+      for (let i = 0; i < customNetworks.length; i += BATCH_SIZE) {
+        const batch = customNetworks.slice(i, i + BATCH_SIZE);
+        const batchResults = await Promise.allSettled(
+          batch.map(network => this.getCustomNetworkBalance(address, network))
+        );
+        
+        batchResults.forEach((result, idx) => {
+          if (result.status === 'fulfilled' && result.value) {
+            allBalances.push(result.value);
+            console.log(`✅ Added custom network balance for ${batch[idx].name}: ${result.value.balance} ${result.value.symbol}`);
+          } else if (result.status === 'rejected') {
+            console.log(`⚠️ Failed to fetch balance for custom network ${batch[idx].name}`);
+          }
+        });
+      }
+    } else {
+      console.log('ℹ️ No custom networks configured for current mode');
+    }
+    
+    console.log(`✅ getAllBalances complete: ${allBalances.length} balances fetched`);
+    return allBalances;
+  }
+
+  // Get balance for custom network
+  async getCustomNetworkBalance(address: string, network: CustomNetwork): Promise<Balance | null> {
+    if (!address) return null;
+
+    try {
+      console.log(`🔍 Fetching balance for custom network: ${network.name} (Chain ID: ${network.chainId})`);
+      const provider = this.getOrCreateCustomProvider(network);
+
+      // Test provider connectivity first with fallback support
+      let workingProvider = provider;
+      try {
+        await provider.getNetwork();
+        console.log(`✅ Provider connected for ${network.name}`);
+      } catch (connError: any) {
+        console.warn(`⚠️ Primary RPC failed for ${network.name}, trying fallbacks...`);
+        
+        // Try fallback providers
+        const fallbacks = this.fallbackProviders.get(network.id);
+        if (fallbacks && fallbacks.length > 0) {
+          let fallbackWorked = false;
+          for (const fallbackProvider of fallbacks) {
+            try {
+              await fallbackProvider.getNetwork();
+              workingProvider = fallbackProvider;
+              fallbackWorked = true;
+              console.log(`✅ Fallback provider connected for ${network.name}`);
+              break;
+            } catch {
+              continue;
+            }
+          }
+          if (!fallbackWorked) {
+            console.error(`❌ All RPC endpoints failed for ${network.name}`);
+            throw new Error(`All RPC endpoints failed`);
+          }
+        } else {
+          console.error(`❌ Failed to connect to ${network.name} RPC:`, connError.message);
+          throw new Error(`RPC connection failed: ${connError.message}`);
+        }
       }
 
       // Rate-limited request with error handling
       const balanceWei = await this.makeRateLimitedRequest(
-        `balance-${chain}-${address}`,
-        async () => await provider.getBalance(address)
+        `balance-${network.id}-${address}`,
+        async () => {
+          console.log(`🔄 Requesting balance from ${network.name}...`);
+          return await workingProvider.getBalance(address);
+        }
       );
 
-      const balanceEth = ethers.formatEther(balanceWei);
+      console.log(`💰 Raw balance for ${network.name}: ${balanceWei.toString()}`);
+
+      const balanceEth = ethers.formatUnits(balanceWei, network.decimals);
       const balanceNum = parseFloat(balanceEth);
+      
+      console.log(`📊 Formatted balance for ${network.name}: ${balanceNum} ${network.symbol}`);
       
       // Validate balance is a valid number
       if (isNaN(balanceNum) || !isFinite(balanceNum) || balanceNum < 0) {
-        console.error(`Invalid balance for ${config.name}: ${balanceEth}`);
+        console.error(`❌ Invalid balance for ${network.name}: ${balanceEth}`);
         return null;
       }
       
-      // Check if this is a testnet
-      const isTestnet = Object.values(TESTNET_CONFIGS).some(c => c.chainId === config.chainId);
+      // Try to fetch price (may not be available for custom tokens)
+      const price = await this.fetchPrice(network.symbol, network.type === 'testnet');
+      console.log(`💵 Price for ${network.symbol}: $${price}`);
       
-      // Fetch price (always returns a valid value - either from API or fallback)
-      const price = await this.fetchPrice(config.symbol, isTestnet);
+      // Calculate USD value if price is available
+      const usdValueNum = price > 0 ? Number((balanceNum * price).toFixed(2)) : 0;
       
-      // Validate price is a valid number
-      if (isNaN(price) || !isFinite(price) || price <= 0) {
-        console.error(`Invalid price for ${config.symbol}: ${price}`);
-        return null;
-      }
-      
-      // Calculate USD value with proper precision
-      const usdValueNum = Number((balanceNum * price).toFixed(2));
-      
-      // Validate USD value
-      if (isNaN(usdValueNum) || !isFinite(usdValueNum) || usdValueNum < 0) {
-        console.error(`Invalid USD value for ${config.name}: balanceNum=${balanceNum}, price=${price}, result=${usdValueNum}`);
-        return null;
-      }
-      
-      // Format USD value - show for both mainnet and testnet
-      const formattedUsdValue = `$${usdValueNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-      const usdValue = isTestnet ? `${formattedUsdValue} (Testnet)` : formattedUsdValue;
+      // Format USD value
+      const formattedUsdValue = usdValueNum > 0 
+        ? `$${usdValueNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : '$0.00';
+      const usdValue = network.type === 'testnet' ? `${formattedUsdValue} (Testnet)` : formattedUsdValue;
 
-      return {
-        chain: config.name,
-        symbol: config.symbol,
+      const result = {
+        chain: network.name,
+        symbol: network.symbol,
         balance: balanceNum.toFixed(4),
         usdValue,
-        usdValueNum, // Include both mainnet and testnet in portfolio total
-        color: config.color,
+        usdValueNum,
+        color: network.color,
         rawBalance: balanceWei.toString(),
       };
+      
+      console.log(`✅ Successfully fetched balance for ${network.name}:`, result);
+      return result;
     } catch (error: any) {
-      // Log error but don't spam console for network issues
-      if (error?.message?.includes('Rate limit')) {
-        console.warn(`⚠️ Rate limit for ${config.name}`);
-      } else if (error?.message?.includes('Unauthorized') || error?.message?.includes('API key')) {
-        console.warn(`⚠️ ${config.name}: RPC requires API key, skipping...`);
-      } else if (error?.code === 'NETWORK_ERROR' || error?.message?.includes('fetch')) {
-        console.warn(`⚠️ ${config.name}: Network error, skipping...`);
-      } else {
-        console.warn(`⚠️ Failed to get balance for ${config.name}:`, error.message || error);
-      }
+      console.error(`❌ Failed to get balance for custom network ${network.name}:`, {
+        error: error.message || error,
+        stack: error.stack,
+        rpcUrl: network.rpcUrl,
+        chainId: network.chainId
+      });
       return null;
     }
-  }
-
-  // Get balances across all chains
-  async getAllBalances(address: string): Promise<Balance[]> {
-    if (!address) return [];
-
-    // Get active configs based on connected chain
-    const activeConfigs = this.getActiveConfigs();
-    const chains = Object.entries(activeConfigs);
-    
-    // Fetch balances sequentially to avoid rate limiting
-    const balances: Balance[] = [];
-    
-    for (const [key, config] of chains) {
-      try {
-        const balance = await this.getBalance(address, key, config);
-        if (balance) {
-          balances.push(balance);
-        }
-      } catch (error) {
-        console.error(`Error fetching balance for ${config.name}:`, error);
-        // Continue with other chains
-      }
-      
-      // Small delay between chain requests
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    
-    return balances;
   }
 
   // Get ALL transactions for an address using backend API (Alchemy-powered)
@@ -1053,9 +1303,6 @@ class BlockchainService {
                 async () => await provider.getBlock(blockNum, false)
               );
               blocks.push(block);
-              
-              // Small delay between block requests
-              await new Promise(resolve => setTimeout(resolve, 50));
             } catch (e) {
               blocks.push(null);
             }
@@ -1102,9 +1349,6 @@ class BlockchainService {
                 };
 
                 transactions.push(this.parseTransaction(txData, address, config, false));
-                
-                // Small delay between transaction requests
-                await new Promise(resolve => setTimeout(resolve, 50));
               } catch {
                 continue;
               }
@@ -1191,7 +1435,85 @@ class BlockchainService {
     }
   }
 
-  // Internal method to fetch transactions
+  // Fetch transactions from custom network via backend
+  async getCustomNetworkTransactions(address: string, network: CustomNetwork): Promise<Transaction[]> {
+    try {
+      console.log(`📡 Fetching transactions from custom network ${network.name} via backend`);
+      
+      const response = await fetch(`${BACKEND_API_URL}/api/transactions/custom/${address}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          rpcUrl: network.rpcUrl,
+          networkName: network.name,
+          categories: ["external", "erc20", "erc721", "erc1155"], // Standard categories
+        }),
+        signal: AbortSignal.timeout(30000), // 30 second timeout
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Backend API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to fetch from backend');
+      }
+      
+      console.log(`📊 Backend returned ${data.transactions?.length || 0} transactions for ${network.name}`);
+      
+      // Transform backend response to match our Transaction interface
+      const transactions: Transaction[] = (data.transactions || []).map((tx: any) => {
+        const value = tx.value !== null && tx.value !== undefined ? parseFloat(tx.value) : 0;
+        const valueFormatted = value > 0 ? value.toFixed(6) : '0';
+        
+        // Parse timestamp
+        let txTimestamp: number;
+        if (tx.metadata?.blockTimestamp) {
+          const date = new Date(tx.metadata.blockTimestamp);
+          if (!isNaN(date.getTime())) {
+            txTimestamp = Math.floor(date.getTime() / 1000);
+          } else {
+            txTimestamp = Math.floor(Date.now() / 1000);
+          }
+        } else {
+          txTimestamp = Math.floor(Date.now() / 1000);
+        }
+        
+        const asset = tx.asset || network.symbol;
+        
+        return {
+          hash: tx.hash,
+          from: tx.from || '',
+          to: tx.to || 'Contract Deployment',
+          value: `${valueFormatted} ${asset}`,
+          valueRaw: value.toString(),
+          gas: tx.gas?.toString() || '0',
+          chain: network.name,
+          status: 'success' as const,
+          time: this.formatTimeAgo(txTimestamp),
+          date: this.formatDate(txTimestamp),
+          timestamp: txTimestamp,
+          blockNumber: tx.blockNum ? parseInt(tx.blockNum, 16) : 0,
+          type: (!tx.to || tx.to === null) ? 'contract-deployment' : 
+                (tx.category === 'erc20' || tx.category === 'erc721' || tx.category === 'erc1155') ? 'contract-interaction' : 'transfer',
+          direction: tx.direction as 'sent' | 'received',
+          isContractCreation: !tx.to || tx.to === null,
+          contractAddress: tx.contractAddress || '',
+        };
+      });
+      
+      return transactions;
+    } catch (error) {
+      console.error(`❌ Failed to fetch transactions for ${network.name}:`, error);
+      return [];
+    }
+  }
+
+  // Internal method to fetch transactions (including custom networks)
   private async fetchTransactionsInternal(address: string): Promise<Transaction[]> {
     console.log(`🔍 Starting transaction fetch for ${address}...`);
     
@@ -1201,7 +1523,25 @@ class BlockchainService {
       const backendTxs = await this.getTransactionsFromBackend(address);
       // If we get here, backend succeeded (even if 0 transactions)
       console.log(`✅ Backend API succeeded: ${backendTxs.length} transactions found`);
-      return backendTxs; // Return even if empty - backend worked correctly
+      
+      // Also fetch from custom networks
+      const customNetworks = this.getActiveCustomNetworks();
+      const customTxs: Transaction[] = [];
+      
+      for (const network of customNetworks) {
+        try {
+          const txs = await this.getCustomNetworkTransactions(address, network);
+          customTxs.push(...txs);
+        } catch (error) {
+          console.error(`Error fetching custom network ${network.name}:`, error);
+        }
+      }
+      
+      // Combine and sort all transactions
+      const allTxs = [...backendTxs, ...customTxs].sort((a, b) => b.timestamp - a.timestamp);
+      console.log(`✅ Total transactions (default + custom): ${allTxs.length}`);
+      
+      return allTxs;
     } catch (error) {
       // Only fall back if backend actually failed/errored
       console.log(`⚠️ Backend API failed, falling back to explorers...`);
@@ -1236,10 +1576,21 @@ class BlockchainService {
         }
         
         // Small delay between chain requests
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await new Promise(resolve => setTimeout(resolve, 50));
       } catch (error) {
         console.error(`❌ ${config.name} error:`, error);
         // Continue with other chains
+      }
+    }
+
+    // Fetch from custom networks as fallback
+    const customNetworks = this.getActiveCustomNetworks();
+    for (const network of customNetworks) {
+      try {
+        const txs = await this.getCustomNetworkTransactions(address, network);
+        allTxs.push(...txs);
+      } catch (error) {
+        console.error(`❌ ${network.name} error:`, error);
       }
     }
 
@@ -1313,6 +1664,18 @@ class BlockchainService {
 
   // Get explorer URL for a transaction hash based on chain name
   getExplorerUrl(chainName: string, txHash: string): string {
+    // Check if it's a custom network first
+    const customNetworks = getCustomNetworks();
+    const customNetwork = customNetworks.find(n => n.name === chainName);
+    
+    if (customNetwork && customNetwork.explorerUrl) {
+      // Ensure explorer URL ends with /tx/ if it doesn't already
+      const baseUrl = customNetwork.explorerUrl.endsWith('/') 
+        ? `${customNetwork.explorerUrl}tx/` 
+        : `${customNetwork.explorerUrl}/tx/`;
+      return `${baseUrl}${txHash}`;
+    }
+    
     const explorerMap: Record<string, string> = {
       // Mainnet
       'Ethereum': 'https://etherscan.io/tx/',

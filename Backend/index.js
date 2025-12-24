@@ -317,6 +317,179 @@ app.get('/api/transactions/:address', async (req, res) => {
   }
 });
 
+// New endpoint for custom network transactions
+app.post('/api/transactions/custom/:address', async (req, res) => {
+  try {
+    const { address } = req.params;
+    const { rpcUrl, networkName, categories } = req.body;
+    
+    if (!rpcUrl || !networkName) {
+      return res.status(400).json({
+        success: false,
+        error: 'rpcUrl and networkName are required'
+      });
+    }
+    
+    console.log(`\n📡 API Request: Fetching transactions for custom network ${networkName}`);
+    
+    // Use standard categories if not provided
+    const txCategories = categories || ["external", "erc20", "erc721", "erc1155"];
+    
+    const transactions = await getCustomNetworkTransactions(address, rpcUrl, networkName, txCategories);
+    
+    res.json({
+      success: true,
+      address: address,
+      network: networkName,
+      totalTransactions: transactions.length,
+      transactions: transactions
+    });
+  } catch (error) {
+    console.error('API Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to fetch transaction history'
+    });
+  }
+});
+
+// Function to fetch transactions from a custom network
+async function getCustomNetworkTransactions(walletAddress, rpcUrl, networkName, categories) {
+  try {
+    // Validate wallet address
+    if (!walletAddress || !walletAddress.match(/^0x[a-fA-F0-9]{40}$/)) {
+      throw new Error('Invalid wallet address format');
+    }
+
+    console.log(`\n🔍 Fetching transactions from custom network: ${networkName}`);
+    console.log(`📋 RPC URL: ${rpcUrl}`);
+    console.log(`📋 Categories: [${categories.join(', ')}]`);
+    
+    const allTransactions = [];
+
+    try {
+      // Fetch both 'from' and 'to' transactions
+      const fromData = {
+        jsonrpc: "2.0",
+        id: 0,
+        method: "alchemy_getAssetTransfers",
+        params: [{
+          fromBlock: "0x0",
+          fromAddress: walletAddress,
+          category: categories,
+          withMetadata: true,
+          excludeZeroValue: false,
+          maxCount: "0x3e8" // 1000 transactions max
+        }]
+      };
+
+      const toData = {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "alchemy_getAssetTransfers",
+        params: [{
+          fromBlock: "0x0",
+          toAddress: walletAddress,
+          category: categories,
+          withMetadata: true,
+          excludeZeroValue: false,
+          maxCount: "0x3e8" // 1000 transactions max
+        }]
+      };
+
+      // Fetch sent transactions with timeout
+      const fromResponse = await Promise.race([
+        fetch(rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(fromData)
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Request timeout (30s)')), 30000)
+        )
+      ]);
+
+      // Fetch received transactions with timeout
+      const toResponse = await Promise.race([
+        fetch(rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(toData)
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Request timeout (30s)')), 30000)
+        )
+      ]);
+
+      let networkTransactions = [];
+
+      // Process 'from' transactions
+      if (fromResponse && fromResponse.ok) {
+        const contentType = fromResponse.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const fromResult = await fromResponse.json();
+          if (fromResult.error) {
+            console.log(`❌ ${networkName} (Sent): API Error - ${fromResult.error.message}`);
+          } else if (fromResult.result && fromResult.result.transfers) {
+            console.log(`✅ ${networkName} (Sent): Found ${fromResult.result.transfers.length} transfers`);
+            networkTransactions.push(...fromResult.result.transfers.map(tx => ({
+              ...tx,
+              direction: 'sent',
+              network: networkName
+            })));
+          }
+        }
+      } else if (fromResponse) {
+        console.log(`⚠️  ${networkName} (Sent): HTTP ${fromResponse.status} - ${fromResponse.statusText}`);
+      }
+
+      // Process 'to' transactions
+      if (toResponse && toResponse.ok) {
+        const contentType = toResponse.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const toResult = await toResponse.json();
+          if (toResult.error) {
+            console.log(`❌ ${networkName} (Received): API Error - ${toResult.error.message}`);
+          } else if (toResult.result && toResult.result.transfers) {
+            console.log(`✅ ${networkName} (Received): Found ${toResult.result.transfers.length} transfers`);
+            networkTransactions.push(...toResult.result.transfers.map(tx => ({
+              ...tx,
+              direction: 'received',
+              network: networkName
+            })));
+          }
+        }
+      } else if (toResponse) {
+        console.log(`⚠️  ${networkName} (Received): HTTP ${toResponse.status} - ${toResponse.statusText}`);
+      }
+
+      // Remove duplicates based on hash
+      const uniqueTransactions = Array.from(
+        new Map(networkTransactions.map(tx => [tx.hash, tx])).values()
+      );
+
+      // Sort by timestamp (most recent first)
+      uniqueTransactions.sort((a, b) => {
+        const timeA = a.metadata?.blockTimestamp ? new Date(a.metadata.blockTimestamp).getTime() : 0;
+        const timeB = b.metadata?.blockTimestamp ? new Date(b.metadata.blockTimestamp).getTime() : 0;
+        return timeB - timeA;
+      });
+
+      allTransactions.push(...uniqueTransactions);
+
+      console.log(`\n✅ ${networkName}: Found ${uniqueTransactions.length} transactions`);
+    } catch (err) {
+      console.error(`❌ ${networkName}: ${err.message}`);
+      throw err;
+    }
+
+    return allTransactions;
+  } catch (error) {
+    console.error('Fatal Error:', error);
+    throw error;
+  }
+}
+
 // Start server
 app.listen(PORT, () => {
   console.log(`\n🚀 Transaction History API Server running on port ${PORT}`);

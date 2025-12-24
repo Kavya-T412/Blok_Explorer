@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { NetworkModeToggle } from '@/components/NetworkModeToggle';
+import { NetworkManager } from '@/components/NetworkManager';
 
 const Settings = () => {
   const [darkMode, setDarkMode] = useState(true);
@@ -50,6 +51,16 @@ const Settings = () => {
                 Switch between Mainnet (real funds) and Testnet (test funds) networks. 
                 The page will reload after switching.
               </p>
+            </motion.div>
+
+            {/* Custom Networks */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15 }}
+              className="glass-card p-6 rounded-xl"
+            >
+              <NetworkManager />
             </motion.div>
 
             {/* Appearance */}
