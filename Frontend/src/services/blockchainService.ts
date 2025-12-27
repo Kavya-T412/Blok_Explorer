@@ -1168,7 +1168,7 @@ class BlockchainService {
       // }
       
       // Transform backend response to match our Transaction interface
-      const transactions: Transaction[] = data.transactions.map((tx: any) => {
+      const transactions: Transaction[] = data.transactions.map((tx: any, index: number) => {
         // Alchemy returns value as a decimal number (not wei), so use it directly
         const value = tx.value !== null && tx.value !== undefined ? parseFloat(tx.value) : 0;
         const valueFormatted = value > 0 ? value.toFixed(6) : '0';
@@ -1182,14 +1182,36 @@ class BlockchainService {
             txTimestamp = Math.floor(date.getTime() / 1000);
           } else {
             console.warn(`Invalid timestamp for tx ${tx.hash}: ${tx.metadata.blockTimestamp}`);
-            txTimestamp = Math.floor(Date.now() / 1000);
+            // Fallback: Use block number to estimate timestamp (approximate)
+            // Average 12 seconds per block for Ethereum-like chains
+            const blockNum = tx.blockNum ? parseInt(tx.blockNum, 16) : 0;
+            const estimatedTime = Date.now() - (blockNum > 0 ? (1000000 - blockNum) * 12 * 1000 : 0);
+            txTimestamp = Math.floor(estimatedTime / 1000) - index; // Add index to make unique
           }
         } else {
-          txTimestamp = Math.floor(Date.now() / 1000);
+          // Fallback: Use block number to estimate timestamp
+          const blockNum = tx.blockNum ? parseInt(tx.blockNum, 16) : 0;
+          if (blockNum > 0) {
+            // Estimate based on average block time (12 seconds for most EVM chains)
+            // This is approximate - newer blocks = more recent timestamp
+            const currentBlock = 100000000; // Approximate current block (high estimate)
+            const blocksDiff = currentBlock - blockNum;
+            const secondsAgo = blocksDiff * 12; // 12 seconds per block
+            txTimestamp = Math.floor(Date.now() / 1000) - secondsAgo - index; // Subtract index for uniqueness
+          } else {
+            // Last resort: use current time with offset based on position in array
+            txTimestamp = Math.floor(Date.now() / 1000) - (index * 10); // 10 second offset per transaction
+          }
+          console.warn(`No timestamp for tx ${tx.hash}, estimated from block ${blockNum}: ${new Date(txTimestamp * 1000).toISOString()}`);
         }
         
         // Get asset symbol, default to 'ETH' if not provided
         const asset = tx.asset || 'ETH';
+        
+        // Get transaction status from backend txStatus field
+        const txStatus: 'success' | 'pending' | 'failed' = 
+          tx.txStatus === 'failed' ? 'failed' : 
+          tx.txStatus === 'pending' ? 'pending' : 'success';
         
         return {
           hash: tx.hash,
@@ -1199,7 +1221,7 @@ class BlockchainService {
           valueRaw: value.toString(),
           gas: tx.gas?.toString() || '0',
           chain: tx.network || 'Unknown',
-          status: 'success' as const, // Alchemy only returns successful transactions
+          status: txStatus,
           time: this.formatTimeAgo(txTimestamp),
           date: this.formatDate(txTimestamp),
           timestamp: txTimestamp,
@@ -1485,6 +1507,11 @@ class BlockchainService {
         
         const asset = tx.asset || network.symbol;
         
+        // Get transaction status from backend txStatus field
+        const txStatus: 'success' | 'pending' | 'failed' = 
+          tx.txStatus === 'failed' ? 'failed' : 
+          tx.txStatus === 'pending' ? 'pending' : 'success';
+        
         return {
           hash: tx.hash,
           from: tx.from || '',
@@ -1493,7 +1520,7 @@ class BlockchainService {
           valueRaw: value.toString(),
           gas: tx.gas?.toString() || '0',
           chain: network.name,
-          status: 'success' as const,
+          status: txStatus,
           time: this.formatTimeAgo(txTimestamp),
           date: this.formatDate(txTimestamp),
           timestamp: txTimestamp,

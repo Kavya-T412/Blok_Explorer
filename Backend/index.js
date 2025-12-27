@@ -12,6 +12,86 @@ app.use(express.json());
 
 const apiKey = "ivn1pyvI9XKDlq_0bKxTj";
 
+// Helper function to fetch block timestamp using eth_getBlockByNumber
+async function fetchBlockTimestamp(blockNum, rpcUrl) {
+  try {
+    const requestBody = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "eth_getBlockByNumber",
+      params: [blockNum, false] // false = don't include transaction details
+    };
+
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    if (data.result && data.result.timestamp) {
+      // Convert hex timestamp to decimal, then to ISO string
+      const timestampDecimal = parseInt(data.result.timestamp, 16);
+      const date = new Date(timestampDecimal * 1000);
+      return date.toISOString();
+    }
+  } catch (error) {
+    console.error(`Failed to fetch block timestamp for ${blockNum}:`, error.message);
+  }
+  return null;
+}
+
+// Helper function to batch fetch transaction receipts to get status (success/failed)
+async function fetchTransactionReceiptsBatch(txHashes, rpcUrl, batchSize = 10) {
+  const results = new Map();
+  
+  for (let i = 0; i < txHashes.length; i += batchSize) {
+    const batch = txHashes.slice(i, i + batchSize);
+    const batchRequests = batch.map((hash, index) => ({
+      jsonrpc: "2.0",
+      id: i + index,
+      method: "eth_getTransactionReceipt",
+      params: [hash]
+    }));
+    
+    try {
+      const response = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(batchRequests)
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const responses = Array.isArray(data) ? data : [data];
+        
+        responses.forEach((item, index) => {
+          if (item.result) {
+            const txHash = batch[index];
+            const status = item.result.status;
+            results.set(txHash, {
+              status: status === '0x1' ? 'success' : status === '0x0' ? 'failed' : 'pending',
+              contractAddress: item.result.contractAddress
+            });
+          }
+        });
+      }
+    } catch (error) {
+      console.error(`Batch receipt fetch error:`, error.message);
+    }
+    
+    if (i + batchSize < txHashes.length) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+  
+  return results;
+}
+
 // Comprehensive Network Configuration for Mainnet
 const MAINNET_NETWORKS = {
   ethereum: `https://eth-mainnet.g.alchemy.com/v2/${apiKey}`,
@@ -189,6 +269,43 @@ async function getTransactionHistory(walletAddress, networkMode = 'mainnet') {
         const uniqueTransactions = Array.from(
           new Map(networkTransactions.map(tx => [tx.hash, tx])).values()
         );
+
+        // Fetch transaction receipts to get actual status (success/failed)
+        if (uniqueTransactions.length > 0) {
+          console.log(`📋 Fetching receipts for ${uniqueTransactions.length} transactions...`);
+          const txHashes = uniqueTransactions.map(tx => tx.hash);
+          const receipts = await fetchTransactionReceiptsBatch(txHashes, network.url);
+          
+          uniqueTransactions.forEach(tx => {
+            const receipt = receipts.get(tx.hash);
+            if (receipt) {
+              tx.txStatus = receipt.status;
+              if (receipt.contractAddress && !tx.contractAddress) {
+                tx.contractAddress = receipt.contractAddress;
+              }
+            } else {
+              tx.txStatus = 'success';
+            }
+          });
+          
+          const failedCount = uniqueTransactions.filter(tx => tx.txStatus === 'failed').length;
+          console.log(`✅ Status: ${uniqueTransactions.length - failedCount} success, ${failedCount} failed`);
+        }
+
+        // Fetch missing timestamps for transactions without metadata.blockTimestamp
+        for (const tx of uniqueTransactions) {
+          if (!tx.metadata?.blockTimestamp && tx.blockNum) {
+            console.log(`⏱️  Fetching timestamp for block ${tx.blockNum}...`);
+            const timestamp = await fetchBlockTimestamp(tx.blockNum, network.url);
+            if (timestamp) {
+              if (!tx.metadata) {
+                tx.metadata = {};
+              }
+              tx.metadata.blockTimestamp = timestamp;
+              console.log(`✅ Retrieved timestamp: ${timestamp}`);
+            }
+          }
+        }
 
         // Sort by block number
         uniqueTransactions.sort((a, b) => {
@@ -468,6 +585,43 @@ async function getCustomNetworkTransactions(walletAddress, rpcUrl, networkName, 
         new Map(networkTransactions.map(tx => [tx.hash, tx])).values()
       );
 
+      // Fetch transaction receipts to get actual status (success/failed)
+      if (uniqueTransactions.length > 0) {
+        console.log(`📋 Fetching receipts for ${uniqueTransactions.length} transactions...`);
+        const txHashes = uniqueTransactions.map(tx => tx.hash);
+        const receipts = await fetchTransactionReceiptsBatch(txHashes, rpcUrl);
+        
+        uniqueTransactions.forEach(tx => {
+          const receipt = receipts.get(tx.hash);
+          if (receipt) {
+            tx.txStatus = receipt.status;
+            if (receipt.contractAddress && !tx.contractAddress) {
+              tx.contractAddress = receipt.contractAddress;
+            }
+          } else {
+            tx.txStatus = 'success';
+          }
+        });
+        
+        const failedCount = uniqueTransactions.filter(tx => tx.txStatus === 'failed').length;
+        console.log(`✅ Status: ${uniqueTransactions.length - failedCount} success, ${failedCount} failed`);
+      }
+
+      // Fetch missing timestamps for transactions without metadata.blockTimestamp
+      for (const tx of uniqueTransactions) {
+        if (!tx.metadata?.blockTimestamp && tx.blockNum) {
+          console.log(`⏱️  Fetching timestamp for block ${tx.blockNum}...`);
+          const timestamp = await fetchBlockTimestamp(tx.blockNum, rpcUrl);
+          if (timestamp) {
+            if (!tx.metadata) {
+              tx.metadata = {};
+            }
+            tx.metadata.blockTimestamp = timestamp;
+            console.log(`✅ Retrieved timestamp: ${timestamp}`);
+          }
+        }
+      }
+
       // Sort by timestamp (most recent first)
       uniqueTransactions.sort((a, b) => {
         const timeA = a.metadata?.blockTimestamp ? new Date(a.metadata.blockTimestamp).getTime() : 0;
@@ -490,10 +644,270 @@ async function getCustomNetworkTransactions(walletAddress, rpcUrl, networkName, 
   }
 }
 
+// ============================================
+// SWAP API ENDPOINTS
+// ============================================
+
+const {
+  SwapService,
+  MultiChainSwapManager,
+  NETWORK_CONFIGS,
+  DEX_ROUTERS,
+  WRAPPED_NATIVE,
+  STABLECOINS,
+  getNetworkConfig,
+  getMainnetChainIds,
+  getTestnetChainIds
+} = require('./swap');
+
+// Get supported chains
+app.get('/api/swap/chains', (req, res) => {
+  try {
+    const { mode } = req.query;
+    
+    let chains = Object.entries(NETWORK_CONFIGS).map(([chainId, config]) => ({
+      chainId: parseInt(chainId),
+      name: config.name,
+      symbol: config.symbol,
+      type: config.type,
+      dexes: Object.keys(DEX_ROUTERS[chainId] || {}),
+      explorer: config.explorer,
+      wrappedNative: WRAPPED_NATIVE[chainId],
+      stablecoins: STABLECOINS[chainId] || {}
+    }));
+    
+    if (mode === 'mainnet') {
+      chains = chains.filter(c => c.type === 'mainnet');
+    } else if (mode === 'testnet') {
+      chains = chains.filter(c => c.type === 'testnet');
+    }
+    
+    res.json({
+      success: true,
+      chains,
+      count: chains.length
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get tokens for a specific chain
+app.get('/api/swap/tokens/:chainId', (req, res) => {
+  try {
+    const chainId = parseInt(req.params.chainId);
+    const config = NETWORK_CONFIGS[chainId];
+    
+    if (!config) {
+      return res.status(404).json({
+        success: false,
+        error: `Chain ${chainId} not supported`
+      });
+    }
+    
+    const tokens = {
+      native: {
+        symbol: config.symbol,
+        name: `${config.name} Native Token`,
+        address: 'native',
+        decimals: 18
+      },
+      wrappedNative: {
+        symbol: `W${config.symbol}`,
+        name: `Wrapped ${config.symbol}`,
+        address: WRAPPED_NATIVE[chainId],
+        decimals: 18
+      }
+    };
+    
+    const stables = STABLECOINS[chainId];
+    if (stables) {
+      Object.entries(stables).forEach(([symbol, address]) => {
+        tokens[symbol.toLowerCase()] = {
+          symbol,
+          address,
+          decimals: symbol === 'DAI' ? 18 : 6
+        };
+      });
+    }
+    
+    res.json({
+      success: true,
+      chainId,
+      network: config.name,
+      tokens
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get DEXes for a specific chain
+app.get('/api/swap/dexes/:chainId', (req, res) => {
+  try {
+    const chainId = parseInt(req.params.chainId);
+    const config = NETWORK_CONFIGS[chainId];
+    
+    if (!config) {
+      return res.status(404).json({
+        success: false,
+        error: `Chain ${chainId} not supported`
+      });
+    }
+    
+    const dexes = DEX_ROUTERS[chainId] || {};
+    
+    res.json({
+      success: true,
+      chainId,
+      network: config.name,
+      defaultDex: config.defaultDex,
+      dexes: Object.entries(dexes).map(([name, address]) => ({
+        name,
+        address,
+        isDefault: name === config.defaultDex
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get swap quote (price estimation)
+app.post('/api/swap/quote', async (req, res) => {
+  try {
+    const { chainId, tokenIn, tokenOut, amountIn, dex } = req.body;
+    
+    if (!chainId || !tokenIn || !tokenOut || !amountIn) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: chainId, tokenIn, tokenOut, amountIn'
+      });
+    }
+    
+    const config = NETWORK_CONFIGS[chainId];
+    if (!config) {
+      return res.status(404).json({
+        success: false,
+        error: `Chain ${chainId} not supported`
+      });
+    }
+    
+    // Note: For actual quotes, you'd need to query the DEX
+    // This is a placeholder response
+    res.json({
+      success: true,
+      chainId,
+      network: config.name,
+      tokenIn,
+      tokenOut,
+      amountIn,
+      estimatedOutput: 'Quote requires on-chain query',
+      dex: dex || config.defaultDex,
+      note: 'Connect wallet and execute swap for actual quote'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Execute swap (requires private key - for backend use only)
+app.post('/api/swap/execute', async (req, res) => {
+  try {
+    const { chainId, swapType, params, privateKey } = req.body;
+    
+    if (!chainId || !swapType || !params) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: chainId, swapType, params'
+      });
+    }
+    
+    // Use environment private key if not provided
+    const key = privateKey || process.env.REACT_APP_PRIVATE_KEY;
+    
+    if (!key) {
+      return res.status(400).json({
+        success: false,
+        error: 'Private key required for swap execution'
+      });
+    }
+    
+    const manager = new MultiChainSwapManager(key);
+    const result = await manager.executeSwap(chainId, swapType, params);
+    
+    res.json({
+      success: true,
+      result
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get account info on a specific chain
+app.get('/api/swap/account/:chainId/:address', async (req, res) => {
+  try {
+    const chainId = parseInt(req.params.chainId);
+    const address = req.params.address;
+    
+    const config = NETWORK_CONFIGS[chainId];
+    if (!config) {
+      return res.status(404).json({
+        success: false,
+        error: `Chain ${chainId} not supported`
+      });
+    }
+    
+    // Create a read-only provider
+    const { ethers } = require('ethers');
+    const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+    
+    const balance = await provider.getBalance(address);
+    const blockNumber = await provider.getBlockNumber();
+    
+    res.json({
+      success: true,
+      account: {
+        address,
+        balance: ethers.formatEther(balance),
+        balanceWei: balance.toString(),
+        network: config.name,
+        chainId,
+        symbol: config.symbol,
+        blockNumber
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`\n🚀 Transaction History API Server running on port ${PORT}`);
   console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
   console.log(`📍 Get transactions: http://localhost:${PORT}/api/transactions/:address?mode=mainnet`);
-  console.log(`📍                    http://localhost:${PORT}/api/transactions/:address?mode=testnet\n`);
+  console.log(`📍                    http://localhost:${PORT}/api/transactions/:address?mode=testnet`);
+  console.log(`📍 Swap chains: http://localhost:${PORT}/api/swap/chains`);
+  console.log(`📍 Swap tokens: http://localhost:${PORT}/api/swap/tokens/:chainId`);
+  console.log(`📍 Swap DEXes: http://localhost:${PORT}/api/swap/dexes/:chainId\n`);
 });
