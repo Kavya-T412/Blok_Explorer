@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
+const { NETWORK_CONFIGS, ALCHEMY_API_KEY, ALCHEMY_ENDPOINTS, getRpcUrl } = require('./networkconfig');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -8,9 +9,6 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
-
-
-const apiKey = "ivn1pyvI9XKDlq_0bKxTj";
 
 // Helper function to fetch block timestamp using eth_getBlockByNumber
 async function fetchBlockTimestamp(blockNum, rpcUrl) {
@@ -92,28 +90,12 @@ async function fetchTransactionReceiptsBatch(txHashes, rpcUrl, batchSize = 10) {
   return results;
 }
 
-// Comprehensive Network Configuration for Mainnet
-const MAINNET_NETWORKS = {
-  ethereum: `https://eth-mainnet.g.alchemy.com/v2/${apiKey}`,
-  polygon: `https://polygon-mainnet.g.alchemy.com/v2/${apiKey}`,
-  bnb: `https://bnb-mainnet.g.alchemy.com/v2/${apiKey}`,
-  arbitrum: `https://arb-mainnet.g.alchemy.com/v2/${apiKey}`,
-  optimism: `https://opt-mainnet.g.alchemy.com/v2/${apiKey}`,
-  base: `https://base-mainnet.g.alchemy.com/v2/${apiKey}`,
-  avalanche: `https://avax-mainnet.g.alchemy.com/v2/${apiKey}`,
-};
-
-// Comprehensive Network Configuration for Testnet
-const TESTNET_NETWORKS = {
-  sepolia: `https://eth-sepolia.g.alchemy.com/v2/${apiKey}`,
-  hoodi: `https://eth-holesky.g.alchemy.com/v2/${apiKey}`,
-  polygonAmoy: `https://polygon-amoy.g.alchemy.com/v2/${apiKey}`,
-  bnbTestnet: `https://bnb-testnet.g.alchemy.com/v2/${apiKey}`,
-  arbitrumSepolia: `https://arb-sepolia.g.alchemy.com/v2/${apiKey}`,
-  optimismSepolia: `https://opt-sepolia.g.alchemy.com/v2/${apiKey}`,
-  baseSepolia: `https://base-sepolia.g.alchemy.com/v2/${apiKey}`,
-  avalancheFuji: `https://avax-fuji.g.alchemy.com/v2/${apiKey}`,
-};
+// Helper function to get network RPC URL with priority
+function getNetworkRpcUrl(chainId) {
+  const config = NETWORK_CONFIGS[chainId];
+  if (!config) return null;
+  return config.rpcUrl;
+}
 
 // Main function to fetch transaction history
 async function getTransactionHistory(walletAddress, networkMode = 'mainnet') {
@@ -135,29 +117,28 @@ async function getTransactionHistory(walletAddress, networkMode = 'mainnet') {
     // All other networks (L2s, BNB, Avalanche, Polygon testnets) don't support 'internal'
     const standardCategories = ["external", "erc20", "erc721", "erc1155"];
 
-    // Build comprehensive network list
+    // Build comprehensive network list from centralized config
     const allNetworks = [];
     
     if (networkMode === 'mainnet') {
       allNetworks.push(
-        { name: 'Ethereum Mainnet', url: MAINNET_NETWORKS.ethereum, categories: ethCategories },
-        { name: 'Polygon Mainnet', url: MAINNET_NETWORKS.polygon, categories: polygonMainnetCategories },
-        { name: 'BNB Chain', url: MAINNET_NETWORKS.bnb, categories: standardCategories },
-        { name: 'Arbitrum One', url: MAINNET_NETWORKS.arbitrum, categories: standardCategories },
-        { name: 'Optimism', url: MAINNET_NETWORKS.optimism, categories: standardCategories },
-        { name: 'Base', url: MAINNET_NETWORKS.base, categories: standardCategories },
-        { name: 'Avalanche C-Chain', url: MAINNET_NETWORKS.avalanche, categories: standardCategories }
+        { name: NETWORK_CONFIGS[1].name, url: NETWORK_CONFIGS[1].rpcUrl, categories: ethCategories },
+        { name: NETWORK_CONFIGS[137].name, url: NETWORK_CONFIGS[137].rpcUrl, categories: polygonMainnetCategories },
+        { name: NETWORK_CONFIGS[56].name, url: NETWORK_CONFIGS[56].rpcUrl, categories: standardCategories },
+        { name: NETWORK_CONFIGS[42161].name, url: NETWORK_CONFIGS[42161].rpcUrl, categories: standardCategories },
+        { name: NETWORK_CONFIGS[10].name, url: NETWORK_CONFIGS[10].rpcUrl, categories: standardCategories },
+        { name: NETWORK_CONFIGS[8453].name, url: NETWORK_CONFIGS[8453].rpcUrl, categories: standardCategories },
+        { name: NETWORK_CONFIGS[43114].name, url: NETWORK_CONFIGS[43114].rpcUrl, categories: standardCategories }
       );
     } else {
       allNetworks.push(
-        { name: 'Ethereum Sepolia', url: TESTNET_NETWORKS.sepolia, categories: ethCategories },
-        { name: 'Ethereum Hoodi', url: TESTNET_NETWORKS.hoodi, categories: ethCategories },
-        { name: 'Polygon Amoy', url: TESTNET_NETWORKS.polygonAmoy, categories: standardCategories },
-        { name: 'BNB Testnet', url: TESTNET_NETWORKS.bnbTestnet, categories: standardCategories },
-        { name: 'Arbitrum Sepolia', url: TESTNET_NETWORKS.arbitrumSepolia, categories: standardCategories },
-        { name: 'Optimism Sepolia', url: TESTNET_NETWORKS.optimismSepolia, categories: standardCategories },
-        { name: 'Base Sepolia', url: TESTNET_NETWORKS.baseSepolia, categories: standardCategories },
-        { name: 'Avalanche Fuji', url: TESTNET_NETWORKS.avalancheFuji, categories: standardCategories }
+        { name: NETWORK_CONFIGS[11155111].name, url: NETWORK_CONFIGS[11155111].rpcUrl, categories: ethCategories },
+        { name: NETWORK_CONFIGS[80002].name, url: NETWORK_CONFIGS[80002].rpcUrl, categories: standardCategories },
+        { name: NETWORK_CONFIGS[97].name, url: NETWORK_CONFIGS[97].rpcUrl, categories: standardCategories },
+        { name: NETWORK_CONFIGS[421614].name, url: NETWORK_CONFIGS[421614].rpcUrl, categories: standardCategories },
+        { name: NETWORK_CONFIGS[11155420].name, url: NETWORK_CONFIGS[11155420].rpcUrl, categories: standardCategories },
+        { name: NETWORK_CONFIGS[84532].name, url: NETWORK_CONFIGS[84532].rpcUrl, categories: standardCategories },
+        { name: NETWORK_CONFIGS[43113].name, url: NETWORK_CONFIGS[43113].rpcUrl, categories: standardCategories }
       );
     }
     
@@ -651,14 +632,13 @@ async function getCustomNetworkTransactions(walletAddress, rpcUrl, networkName, 
 const {
   SwapService,
   MultiChainSwapManager,
-  NETWORK_CONFIGS,
-  DEX_ROUTERS,
-  WRAPPED_NATIVE,
-  STABLECOINS,
   getNetworkConfig,
   getMainnetChainIds,
   getTestnetChainIds
 } = require('./swap');
+
+// Import remaining constants from networkconfig (already imported at top, but DEX_ROUTERS etc. are needed here)
+const { DEX_ROUTERS, WRAPPED_NATIVE, STABLECOINS } = require('./networkconfig');
 
 // Get supported chains
 app.get('/api/swap/chains', (req, res) => {

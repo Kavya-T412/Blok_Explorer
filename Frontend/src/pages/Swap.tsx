@@ -735,14 +735,19 @@ const Swap = () => {
           }
           
           if (isSwapRouter02) {
-            // SwapRouter02: Use multicall with deadline
+            // SwapRouter02: Use multicall with deadline and unwrap WETH to ETH
             const router = new ethers.Contract(routerAddress, UNISWAP_V3_SWAPROUTER02_ABI, signer);
+            
+            // For Token -> Native, we need to:
+            // 1. Swap token to WETH/WMATIC (keep in router using ADDRESS_THIS)
+            // 2. Unwrap WETH/WMATIC to ETH/MATIC and send to user
+            const ADDRESS_THIS = '0x0000000000000000000000000000000000000002';
             
             const params = {
               tokenIn: fromTokenData.address,
               tokenOut: wrappedNativeAddress,
               fee: workingFee,
-              recipient: userAddress,
+              recipient: ADDRESS_THIS, // Keep WETH in router for unwrapping
               amountIn: amountIn,
               amountOutMinimum: 0n,
               sqrtPriceLimitX96: 0n
@@ -753,9 +758,12 @@ const Swap = () => {
             const swapCalldata = iface.encodeFunctionData('exactInputSingle', [
               [params.tokenIn, params.tokenOut, params.fee, params.recipient, params.amountIn, params.amountOutMinimum, params.sqrtPriceLimitX96]
             ]);
+            
+            // Encode unwrapWETH9 call to unwrap and send to user
+            const unwrapCalldata = iface.encodeFunctionData('unwrapWETH9', [0n, userAddress]);
 
-            // Call via multicall with deadline
-            tx = await router.multicall(deadline, [swapCalldata], { gasLimit: 400000n });
+            // Call via multicall with deadline - swap then unwrap
+            tx = await router.multicall(deadline, [swapCalldata, unwrapCalldata], { gasLimit: 450000n });
           } else {
             // Legacy SwapRouter
             const router = new ethers.Contract(routerAddress, UNISWAP_V3_LEGACY_ROUTER_ABI, signer);
