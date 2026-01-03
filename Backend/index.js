@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
-const { NETWORK_CONFIGS, ALCHEMY_API_KEY, ALCHEMY_ENDPOINTS, getRpcUrl } = require('./networkconfig');
+const { NETWORK_CONFIGS, ALCHEMY_API_KEY, ALCHEMY_ENDPOINTS } = require('./networkconfig');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
