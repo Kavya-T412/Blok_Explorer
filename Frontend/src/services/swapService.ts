@@ -35,6 +35,59 @@ export interface AccountInfo {
   blockNumber: number;
 }
 
+export interface PoolDetails {
+  address: string;
+  fee: number;
+  sqrtPriceX96: string;
+  tick: number;
+  liquidity: string;
+  token0: string;
+  token1: string;
+  exists: boolean;
+}
+
+export interface QuoteDetails {
+  fee: number;
+  amountOut: string;
+  gasEstimate: string;
+}
+
+export interface DetailedQuote {
+  success: boolean;
+  chainId: number;
+  network: string;
+  tokenIn: string;
+  tokenOut: string;
+  amountIn: string;
+  estimatedOutput: string;
+  feeTier: number;
+  gasEstimate?: string;
+  pools: PoolDetails[];
+  allQuotes: QuoteDetails[];
+  isWrapUnwrap?: boolean;
+  error?: string;
+}
+
+export interface SwapPayload {
+  poolDetails: PoolDetails[];
+  quote: {
+    amountOut: string;
+    amountOutMin: string;
+    fee: number;
+    gasEstimate: string;
+    allQuotes: QuoteDetails[];
+  };
+  swapParams: {
+    tokenIn: string;
+    tokenOut: string;
+    fee: number;
+    amountIn: string;
+    amountOutMinimum: string;
+  };
+  deadline: number;
+  routerAddress: string;
+}
+
 class SwapService {
   private baseUrl: string;
 
@@ -74,6 +127,79 @@ class SwapService {
       return data.account;
     }
     throw new Error(data.error || 'Failed to fetch account info');
+  }
+
+  // Step 1: Get Pool Details
+  async getPoolDetails(chainId: number, tokenIn: string, tokenOut: string): Promise<PoolDetails[]> {
+    const response = await fetch(`${this.baseUrl}/api/swap/pool-details`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chainId, tokenIn, tokenOut })
+    });
+    const data = await response.json();
+    
+    if (data.success) {
+      return data.pools;
+    }
+    throw new Error(data.error || 'Failed to fetch pool details');
+  }
+
+  // Step 2: Get Detailed Quote
+  async getDetailedQuote(
+    chainId: number,
+    tokenIn: string,
+    tokenOut: string,
+    amountIn: string,
+    fromDecimals: number,
+    toDecimals: number
+  ): Promise<DetailedQuote> {
+    const response = await fetch(`${this.baseUrl}/api/swap/quote-detailed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chainId,
+        tokenIn,
+        tokenOut,
+        amountIn,
+        fromDecimals,
+        toDecimals
+      })
+    });
+    const data = await response.json();
+    
+    if (data.success) {
+      return data;
+    }
+    throw new Error(data.error || 'Failed to fetch detailed quote');
+  }
+
+  // Step 3: Create Swap Payload
+  async createSwapPayload(
+    chainId: number,
+    tokenIn: string,
+    tokenOut: string,
+    amountIn: string,
+    fromDecimals: number,
+    slippagePercent: number = 5
+  ): Promise<SwapPayload> {
+    const response = await fetch(`${this.baseUrl}/api/swap/create-payload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chainId,
+        tokenIn,
+        tokenOut,
+        amountIn,
+        fromDecimals,
+        slippagePercent
+      })
+    });
+    const data = await response.json();
+    
+    if (data.success) {
+      return data.payload;
+    }
+    throw new Error(data.error || 'Failed to create swap payload');
   }
 
   formatBalance(balance: string, decimals: number = 6): string {

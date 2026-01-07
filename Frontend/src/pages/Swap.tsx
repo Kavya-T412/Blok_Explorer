@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowDownUp, Info, Loader2, ExternalLink, Settings } from 'lucide-react';
+import { ArrowDownUp, Info, Loader2, ExternalLink, Settings, TrendingUp, Droplets } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useWallet } from '@/contexts/WalletContext';
-import { NetworkModeIndicator } from '@/components/NetworkModeToggle';
 import { Slider } from '@/components/ui/slider';
 import {
   Dialog,
@@ -19,6 +18,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { ethers } from 'ethers';
+import { swapService, PoolDetails, QuoteDetails } from '@/services/swapService';
 
 const API_BASE_URL = 'http://localhost:3001';
 
@@ -135,6 +135,15 @@ const Swap = () => {
   const [estimatedOutput, setEstimatedOutput] = useState<string>('0.0');
   const [balance, setBalance] = useState<string>('0');
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [isLoadingQuote, setIsLoadingQuote] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  
+  // New state for detailed swap information
+  const [poolDetails, setPoolDetails] = useState<PoolDetails[]>([]);
+  const [allQuotes, setAllQuotes] = useState<QuoteDetails[]>([]);
+  const [selectedFeeTier, setSelectedFeeTier] = useState<number>(3000);
+  const [gasEstimate, setGasEstimate] = useState<string>('0');
+  const [showDetails, setShowDetails] = useState(false);
 
   // Fetch chains
   useEffect(() => {
@@ -175,6 +184,13 @@ const Swap = () => {
           const tokenKeys = Object.keys(data.tokens);
           const defaultTo = tokenKeys.find(k => k === 'wrappedNative') || tokenKeys.find(k => k !== 'native') || '';
           setToToken(defaultTo);
+          // Reset amount and quote when changing chains
+          setAmount('');
+          setEstimatedOutput('0.0');
+          setQuoteError(null);
+          setPoolDetails([]);
+          setAllQuotes([]);
+          setGasEstimate('0');
         }
       } catch (error) {
         console.error('Failed to fetch tokens:', error);
@@ -209,16 +225,95 @@ const Swap = () => {
     fetchBalance();
   }, [selectedChain, address]);
 
-  // Estimate output
+  // Fetch real quote from backend with detailed pool information
   useEffect(() => {
-    if (amount && parseFloat(amount) > 0) {
-      const inputAmount = parseFloat(amount);
-      const slippageMultiplier = (100 - slippage) / 100;
-      setEstimatedOutput((inputAmount * slippageMultiplier * 0.98).toFixed(6));
-    } else {
-      setEstimatedOutput('0.0');
-    }
-  }, [amount, slippage]);
+    const fetchQuote = async () => {
+      if (!amount || parseFloat(amount) <= 0 || !selectedChain || !fromToken || !toToken) {
+        setEstimatedOutput('0.0');
+        setQuoteError(null);
+        setIsLoadingQuote(false);
+        setPoolDetails([]);
+        setAllQuotes([]);
+        setGasEstimate('0');
+        return;
+      }
+
+      const fromTokenData = tokens[fromToken];
+      const toTokenData = tokens[toToken];
+
+      if (!fromTokenData || !toTokenData) {
+        setEstimatedOutput('0.0');
+        setIsLoadingQuote(false);
+        return;
+      }
+
+      setIsLoadingQuote(true);
+      setQuoteError(null);
+
+      try {
+        // For wrap/unwrap, use 1:1 ratio
+        if ((fromToken === 'native' && toToken === 'wrappedNative') || 
+            (fromToken === 'wrappedNative' && toToken === 'native')) {
+          setEstimatedOutput(amount);
+          setIsLoadingQuote(false);
+          setPoolDetails([]);
+          setAllQuotes([]);
+          setGasEstimate('0');
+          return;
+        }
+
+        // Step 1 & 2: Get detailed quote with pool information
+        const detailedQuote = await swapService.getDetailedQuote(
+          selectedChain.chainId,
+          fromToken,
+          toToken,
+          amount,
+          fromTokenData.decimals,
+          toTokenData.decimals
+        );
+
+        if (detailedQuote.success && detailedQuote.estimatedOutput) {
+          const output = parseFloat(detailedQuote.estimatedOutput);
+          // Apply slippage tolerance
+          const slippageMultiplier = (100 - slippage) / 100;
+          const outputWithSlippage = output * slippageMultiplier;
+          
+          setEstimatedOutput(outputWithSlippage.toFixed(6));
+          setPoolDetails(detailedQuote.pools);
+          setAllQuotes(detailedQuote.allQuotes);
+          setSelectedFeeTier(detailedQuote.feeTier);
+          setGasEstimate(detailedQuote.gasEstimate || '0');
+          setIsLoadingQuote(false);
+          
+          console.log('✅ Quote fetched successfully:', {
+            pools: detailedQuote.pools.length,
+            feeTier: detailedQuote.feeTier,
+            output: detailedQuote.estimatedOutput
+          });
+        } else {
+          setQuoteError(detailedQuote.error || 'Unable to get quote');
+          setEstimatedOutput('0.0');
+          setPoolDetails([]);
+          setAllQuotes([]);
+          setIsLoadingQuote(false);
+        }
+      } catch (error) {
+        console.error('Failed to fetch quote:', error);
+        setQuoteError('Failed to fetch quote');
+        // Fallback to simple estimation
+        const inputAmount = parseFloat(amount);
+        const slippageMultiplier = (100 - slippage) / 100;
+        setEstimatedOutput((inputAmount * slippageMultiplier * 0.98).toFixed(6));
+        setPoolDetails([]);
+        setAllQuotes([]);
+        setIsLoadingQuote(false);
+      }
+    };
+
+    // Debounce the quote fetching
+    const timeoutId = setTimeout(fetchQuote, 500);
+    return () => clearTimeout(timeoutId);
+  }, [amount, slippage, selectedChain, fromToken, toToken, tokens]);
 
   const findBestFeeTier = async (
     provider: ethers.BrowserProvider,
@@ -451,6 +546,12 @@ const Swap = () => {
     const temp = fromToken;
     setFromToken(toToken);
     setToToken(temp);
+    // Reset quote when swapping tokens
+    setEstimatedOutput('0.0');
+    setQuoteError(null);
+    setPoolDetails([]);
+    setAllQuotes([]);
+    setGasEstimate('0');
   };
 
   if (isLoading) {
@@ -478,9 +579,6 @@ const Swap = () => {
           >
             <h1 className="text-4xl font-bold gradient-text mb-2">Uniswap Multi-Chain Swap</h1>
             <p className="text-muted-foreground">Swap tokens using Uniswap V3 across networks</p>
-            <div className="mt-4 flex justify-center gap-2">
-              <NetworkModeIndicator />
-            </div>
           </motion.div>
 
           {/* Network Mode Toggle */}
@@ -607,10 +705,21 @@ const Swap = () => {
                       ))}
                   </SelectContent>
                 </Select>
-                <div className="text-2xl font-bold text-muted-foreground">
-                  {estimatedOutput}
+                <div className="text-2xl font-bold text-muted-foreground flex items-center gap-2">
+                  {isLoadingQuote ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span className="text-sm">Fetching quote...</span>
+                    </>
+                  ) : (
+                    estimatedOutput
+                  )}
                 </div>
-                <p className="text-sm text-muted-foreground">Estimated receive amount</p>
+                {quoteError ? (
+                  <p className="text-sm text-red-500">{quoteError}</p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Estimated receive amount</p>
+                )}
               </div>
             </div>
 
@@ -628,6 +737,18 @@ const Swap = () => {
                 <span className="text-muted-foreground">Slippage Tolerance</span>
                 <span className="font-medium">{slippage}%</span>
               </div>
+              {selectedFeeTier > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Best Fee Tier</span>
+                  <span className="font-medium text-primary">{selectedFeeTier / 10000}%</span>
+                </div>
+              )}
+              {gasEstimate !== '0' && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Est. Gas</span>
+                  <span className="font-medium">{parseInt(gasEstimate).toLocaleString()}</span>
+                </div>
+              )}
             </div>
 
             {/* Settings Dialog */}

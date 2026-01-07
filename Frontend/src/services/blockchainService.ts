@@ -522,6 +522,21 @@ class BlockchainService {
     return useTestnet ? TESTNET_CONFIGS : MAINNET_CONFIGS;
   }
 
+  // Get all available chain names (for filters/dropdowns)
+  getAllAvailableChains(): string[] {
+    const baseConfigs = this.getActiveConfigs();
+    const customNetworks = this.getActiveCustomNetworks();
+    
+    // Get chain names from base configs
+    const baseChains = Object.values(baseConfigs).map(config => config.name);
+    
+    // Get chain names from custom networks
+    const customChains = customNetworks.map(network => network.name);
+    
+    // Combine and sort
+    return [...baseChains, ...customChains].sort();
+  }
+
   // Get custom networks filtered by type (mainnet or testnet)
   private getActiveCustomNetworks(): CustomNetwork[] {
     const useTestnet = typeof window !== 'undefined' 
@@ -1142,7 +1157,7 @@ class BlockchainService {
       console.log(`📡 Fetching ${networkMode.toUpperCase()} transactions from backend API for ${address}`);
       
       const response = await fetch(`${BACKEND_API_URL}/api/transactions/${address}?mode=${networkMode}`, {
-        signal: AbortSignal.timeout(30000) // 30 second timeout
+        signal: AbortSignal.timeout(60000) // 60 second timeout for multiple networks
       });
       
       if (!response.ok) {
@@ -1239,7 +1254,7 @@ class BlockchainService {
     } catch (error) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          console.error('⏱️ Backend request timed out (30s)');
+          console.error('⏱️ Backend request timed out (60s)');
         } else if (error.message.includes('Failed to fetch')) {
           console.error('🔌 Cannot connect to backend - is it running on port 3001?');
         } else {
@@ -1687,6 +1702,179 @@ class BlockchainService {
       console.error('Error calculating total portfolio value:', error);
       return 0;
     }
+  }
+
+  // Search for a transaction by hash across all chains
+  async searchTransactionByHash(txHash: string): Promise<Transaction | null> {
+    if (!txHash || txHash.trim() === '') {
+      return null;
+    }
+
+    // Normalize hash (ensure it starts with 0x)
+    const normalizedHash = txHash.startsWith('0x') ? txHash : `0x${txHash}`;
+    
+    // Validate hash format (should be 66 characters: 0x + 64 hex chars)
+    if (!/^0x[0-9a-fA-F]{64}$/.test(normalizedHash)) {
+      throw new Error('Invalid transaction hash format');
+    }
+
+    console.log(`🔍 Searching for transaction: ${normalizedHash}`);
+
+    const activeConfigs = this.getActiveConfigs();
+    const customNetworks = this.getActiveCustomNetworks();
+
+    // Search in all active chains
+    for (const [key, config] of Object.entries(activeConfigs)) {
+      try {
+        const provider = this.providers.get(key);
+        if (!provider) continue;
+
+        console.log(`🔎 Checking ${config.name}...`);
+        
+        // Try to get transaction and receipt
+        const [tx, receipt] = await Promise.all([
+          provider.getTransaction(normalizedHash).catch(() => null),
+          provider.getTransactionReceipt(normalizedHash).catch(() => null)
+        ]);
+
+        if (tx || receipt) {
+          console.log(`✅ Transaction found on ${config.name}!`);
+          
+          // Parse transaction details
+          const value = tx?.value ? parseFloat(ethers.formatEther(tx.value)) : 0;
+          const gasPrice = tx?.gasPrice ? ethers.formatUnits(tx.gasPrice, 'gwei') : '0';
+          const gasUsed = receipt?.gasUsed ? receipt.gasUsed.toString() : tx?.gasLimit?.toString() || '0';
+          
+          // Determine transaction status
+          let status: 'success' | 'pending' | 'failed' = 'pending';
+          if (receipt) {
+            status = receipt.status === 1 ? 'success' : 'failed';
+          }
+
+          // Get block timestamp
+          let timestamp = Math.floor(Date.now() / 1000);
+          if (receipt?.blockNumber) {
+            try {
+              const block = await provider.getBlock(receipt.blockNumber);
+              if (block?.timestamp) {
+                timestamp = block.timestamp;
+              }
+            } catch (e) {
+              console.warn('Could not fetch block timestamp');
+            }
+          }
+
+          // Determine transaction type
+          const isContractCreation = !tx?.to || tx.to === null;
+          let txType: 'transfer' | 'contract-deployment' | 'contract-interaction' = 'transfer';
+          if (isContractCreation) {
+            txType = 'contract-deployment';
+          } else if (tx?.data && tx.data !== '0x') {
+            txType = 'contract-interaction';
+          }
+
+          const transaction: Transaction = {
+            hash: normalizedHash,
+            from: tx?.from || receipt?.from || '',
+            to: tx?.to || receipt?.to || 'Contract Deployment',
+            value: `${value.toFixed(6)} ${config.symbol}`,
+            valueRaw: tx?.value?.toString() || '0',
+            gas: gasUsed,
+            gasPrice: gasPrice,
+            chain: config.name,
+            status: status,
+            time: this.formatTimeAgo(timestamp),
+            date: this.formatDate(timestamp),
+            timestamp: timestamp,
+            blockNumber: receipt?.blockNumber || tx?.blockNumber,
+            type: txType,
+            direction: 'sent', // We don't know the user's address in search
+            isContractCreation: isContractCreation,
+            contractAddress: receipt?.contractAddress || '',
+            methodId: tx?.data && tx.data.length >= 10 ? tx.data.slice(0, 10) : '',
+            input: tx?.data || ''
+          };
+
+          return transaction;
+        }
+      } catch (error) {
+        console.warn(`Error checking ${config.name}:`, error);
+        // Continue to next chain
+      }
+    }
+
+    // Search in custom networks
+    for (const network of customNetworks) {
+      try {
+        const provider = new ethers.JsonRpcProvider(network.rpcUrl);
+        console.log(`🔎 Checking custom network ${network.name}...`);
+        
+        const [tx, receipt] = await Promise.all([
+          provider.getTransaction(normalizedHash).catch(() => null),
+          provider.getTransactionReceipt(normalizedHash).catch(() => null)
+        ]);
+
+        if (tx || receipt) {
+          console.log(`✅ Transaction found on ${network.name}!`);
+          
+          const value = tx?.value ? parseFloat(ethers.formatEther(tx.value)) : 0;
+          const gasUsed = receipt?.gasUsed ? receipt.gasUsed.toString() : tx?.gasLimit?.toString() || '0';
+          
+          let status: 'success' | 'pending' | 'failed' = 'pending';
+          if (receipt) {
+            status = receipt.status === 1 ? 'success' : 'failed';
+          }
+
+          let timestamp = Math.floor(Date.now() / 1000);
+          if (receipt?.blockNumber) {
+            try {
+              const block = await provider.getBlock(receipt.blockNumber);
+              if (block?.timestamp) {
+                timestamp = block.timestamp;
+              }
+            } catch (e) {
+              console.warn('Could not fetch block timestamp');
+            }
+          }
+
+          const isContractCreation = !tx?.to || tx.to === null;
+          let txType: 'transfer' | 'contract-deployment' | 'contract-interaction' = 'transfer';
+          if (isContractCreation) {
+            txType = 'contract-deployment';
+          } else if (tx?.data && tx.data !== '0x') {
+            txType = 'contract-interaction';
+          }
+
+          const transaction: Transaction = {
+            hash: normalizedHash,
+            from: tx?.from || receipt?.from || '',
+            to: tx?.to || receipt?.to || 'Contract Deployment',
+            value: `${value.toFixed(6)} ${network.symbol}`,
+            valueRaw: tx?.value?.toString() || '0',
+            gas: gasUsed,
+            chain: network.name,
+            status: status,
+            time: this.formatTimeAgo(timestamp),
+            date: this.formatDate(timestamp),
+            timestamp: timestamp,
+            blockNumber: receipt?.blockNumber || tx?.blockNumber,
+            type: txType,
+            direction: 'sent',
+            isContractCreation: isContractCreation,
+            contractAddress: receipt?.contractAddress || '',
+            methodId: tx?.data && tx.data.length >= 10 ? tx.data.slice(0, 10) : '',
+            input: tx?.data || ''
+          };
+
+          return transaction;
+        }
+      } catch (error) {
+        console.warn(`Error checking custom network ${network.name}:`, error);
+      }
+    }
+
+    console.log('❌ Transaction not found on any chain');
+    return null;
   }
 
   // Get explorer URL for a transaction hash based on chain name

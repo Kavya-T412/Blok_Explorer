@@ -31,8 +31,42 @@ const QUOTER_ABI = [
   'function quoteExactInputSingle(tuple(address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96) params) external returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)'
 ];
 
+// Uniswap V3 Factory ABI
+const FACTORY_ABI = [
+  'function getPool(address tokenA, address tokenB, uint24 fee) external view returns (address pool)'
+];
+
+// Uniswap V3 Pool ABI
+const POOL_ABI = [
+  'function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)',
+  'function liquidity() external view returns (uint128)',
+  'function token0() external view returns (address)',
+  'function token1() external view returns (address)',
+  'function fee() external view returns (uint24)'
+];
+
 const ADDRESS_THIS = '0x0000000000000000000000000000000000000002';
 const FEE_TIERS = [500, 3000, 10000];
+
+// Uniswap V3 Factory Addresses
+const UNISWAP_V3_FACTORY = {
+  // Mainnet
+  1: '0x1F98431c8aD98523631AE4a59f267346ea31F984',
+  137: '0x1F98431c8aD98523631AE4a59f267346ea31F984',
+  42161: '0x1F98431c8aD98523631AE4a59f267346ea31F984',
+  10: '0x1F98431c8aD98523631AE4a59f267346ea31F984',
+  8453: '0x33128a8fC17869897dcE68Ed026d694621f6FDfD',
+  56: '0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7', // PancakeSwap V3 Factory
+  43114: '0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD', // Trader Joe V2.1 Factory
+  // Testnet
+  11155111: '0x0227628f3F023bb0B980b67D528571c95c6DaC1c',
+  80002: '0x1F98431c8aD98523631AE4a59f267346ea31F984',
+  97: '0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865', // PancakeSwap Testnet Factory
+  421614: '0x248AB79Bbb9bC29bB72f7Cd42F17e054Fc40188e',
+  11155420: '0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24',
+  84532: '0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24',
+  43113: '0xF5c7d9733e5f53abCC1695820c4818C59B457C2C' // Trader Joe Testnet Factory
+};
 
 class SwapService {
   constructor(privateKey, chainId = 11155111) {
@@ -178,30 +212,159 @@ class SwapService {
     };
   }
 
-  async findBestFeeTier(tokenIn, tokenOut, amountIn) {
+  // Step 1: Gather Pool Details
+  async getPoolDetails(tokenIn, tokenOut) {
+    console.log('\n--- Step 1: Gathering Pool Details ---');
+    
+    const factoryAddress = UNISWAP_V3_FACTORY[this.chainId];
+    if (!factoryAddress) {
+      console.warn(`⚠️  No Uniswap V3 Factory configured for chain ${this.chainId}`);
+      // Return simulated pool data for unsupported chains
+      return [{
+        address: ethers.ZeroAddress,
+        fee: 3000,
+        sqrtPriceX96: '0',
+        tick: 0,
+        liquidity: '0',
+        token0: tokenIn,
+        token1: tokenOut,
+        exists: false,
+        simulated: true
+      }];
+    }
+    
+    const factory = new ethers.Contract(factoryAddress, FACTORY_ABI, this.provider);
+    const poolsInfo = [];
+    
+    for (const fee of FEE_TIERS) {
+      try {
+        const poolAddress = await factory.getPool(tokenIn, tokenOut, fee);
+        
+        if (poolAddress !== ethers.ZeroAddress) {
+          const pool = new ethers.Contract(poolAddress, POOL_ABI, this.provider);
+          const [slot0, liquidity, token0, token1, poolFee] = await Promise.all([
+            pool.slot0(),
+            pool.liquidity(),
+            pool.token0(),
+            pool.token1(),
+            pool.fee()
+          ]);
+          
+          poolsInfo.push({
+            address: poolAddress,
+            fee: Number(poolFee),
+            sqrtPriceX96: slot0.sqrtPriceX96.toString(),
+            tick: Number(slot0.tick),
+            liquidity: liquidity.toString(),
+            token0,
+            token1,
+            exists: true
+          });
+          
+          console.log(`✓ Pool found at fee tier ${fee / 10000}% with liquidity: ${ethers.formatUnits(liquidity, 0)}`);
+        }
+      } catch (error) {
+        console.log(`✗ No pool at fee tier ${fee / 10000}%`);
+      }
+    }
+    
+    if (poolsInfo.length === 0) {
+      console.warn('⚠️  No liquidity pools found, returning simulated data');
+      // Return simulated pool data instead of throwing error
+      return [{
+        address: ethers.ZeroAddress,
+        fee: 3000,
+        sqrtPriceX96: '0',
+        tick: 0,
+        liquidity: '0',
+        token0: tokenIn,
+        token1: tokenOut,
+        exists: false,
+        simulated: true
+      }];
+    }
+    
+    return poolsInfo;
+  }
+
+  // Step 2: Fetch Quote from all available pools
+  async fetchQuote(tokenIn, tokenOut, amountIn) {
+    console.log('\n--- Step 2: Fetching Quotes ---');
+    
     const quoterAddress = UNISWAP_V3_QUOTER[this.chainId];
-    if (!quoterAddress) return { fee: 3000, quote: null };
+    if (!quoterAddress) {
+      console.warn(`⚠️  No Quoter configured for chain ${this.chainId}, using price estimation`);
+      // Return estimated quote based on 1:1 ratio with 0.3% fee
+      const estimatedOutput = (amountIn * 997n) / 1000n; // 0.3% fee
+      return { 
+        fee: 3000, 
+        quote: estimatedOutput,
+        gasEstimate: 150000n,
+        allQuotes: [{
+          fee: 3000,
+          amountOut: estimatedOutput.toString(),
+          gasEstimate: '150000',
+          estimated: true
+        }],
+        estimated: true
+      };
+    }
     
     const quoter = new ethers.Contract(quoterAddress, QUOTER_ABI, this.provider);
     let bestQuote = null;
     let bestFee = 3000;
+    let bestGasEstimate = 0n;
+    const quotes = [];
     
     for (const fee of FEE_TIERS) {
       try {
         const params = { tokenIn, tokenOut, amountIn, fee, sqrtPriceLimitX96: 0 };
         const result = await quoter.quoteExactInputSingle.staticCall(params);
         const quote = result.amountOut || result[0];
+        const gasEstimate = result.gasEstimate || result[3] || 0n;
+        
+        quotes.push({
+          fee,
+          amountOut: quote.toString(),
+          gasEstimate: gasEstimate.toString()
+        });
         
         if (!bestQuote || quote > bestQuote) {
           bestQuote = quote;
           bestFee = fee;
+          bestGasEstimate = gasEstimate;
         }
-      } catch {
-        continue;
+        
+        console.log(`✓ Fee tier ${fee / 10000}%: Output = ${ethers.formatEther(quote)}, Gas = ${gasEstimate.toString()}`);
+      } catch (error) {
+        console.log(`✗ Fee tier ${fee / 10000}%: No quote available`);
       }
     }
     
-    return { fee: bestFee, quote: bestQuote };
+    // If no quotes found, return estimated quote
+    if (!bestQuote) {
+      console.warn('⚠️  No quotes available, using price estimation');
+      const estimatedOutput = (amountIn * 997n) / 1000n; // 0.3% fee
+      return { 
+        fee: 3000, 
+        quote: estimatedOutput,
+        gasEstimate: 150000n,
+        allQuotes: [{
+          fee: 3000,
+          amountOut: estimatedOutput.toString(),
+          gasEstimate: '150000',
+          estimated: true
+        }],
+        estimated: true
+      };
+    }
+    
+    return { 
+      fee: bestFee, 
+      quote: bestQuote,
+      gasEstimate: bestGasEstimate,
+      allQuotes: quotes
+    };
   }
 
   encodeExactInputSingle(params) {
@@ -217,41 +380,90 @@ class SwapService {
     ]]);
   }
 
-  async swapNativeForToken(tokenOut, amountIn, slippagePercent = 5) {
-    console.log(`\n--- Swapping ${this.networkConfig.symbol} for Token ---`);
+  // Step 3: Create Swap Payload
+  async createSwapPayload(tokenIn, tokenOut, amountIn, slippagePercent = 5) {
+    console.log('\n--- Step 3: Creating Swap Payload ---');
+    
     await this.getProvider();
     
-    const amountInWei = ethers.parseEther(amountIn.toString());
-    const wrappedNative = WRAPPED_NATIVE[this.chainId];
-    const deadline = Math.floor(Date.now() / 1000) + 1200;
+    // Step 1: Get pool details
+    const poolDetails = await this.getPoolDetails(tokenIn, tokenOut);
     
-    const balance = await this.provider.getBalance(this.account);
-    if (balance < amountInWei) {
-      throw new Error(`Insufficient ${this.networkConfig.symbol} balance`);
+    // Step 2: Get best quote
+    const { fee, quote, gasEstimate, allQuotes } = await this.fetchQuote(tokenIn, tokenOut, amountIn);
+    
+    if (!quote) {
+      throw new Error('Unable to get quote for swap');
     }
     
-    const { fee, quote } = await this.findBestFeeTier(wrappedNative, tokenOut, amountInWei);
-    const amountOutMin = quote ? quote * BigInt(100 - slippagePercent) / BigInt(100) : 0n;
-    
-    const router = new ethers.Contract(this.routerAddress, UNISWAP_V3_ROUTER_ABI, this.signer);
+    const amountOutMin = quote * BigInt(100 - slippagePercent) / BigInt(100);
+    const deadline = Math.floor(Date.now() / 1000) + 1200; // 20 minutes
     
     const swapParams = {
-      tokenIn: wrappedNative,
-      tokenOut: tokenOut,
-      fee: fee,
+      tokenIn,
+      tokenOut,
+      fee,
       recipient: this.account,
-      amountIn: amountInWei,
+      amountIn,
       amountOutMinimum: amountOutMin,
       sqrtPriceLimitX96: 0
     };
     
     const swapCalldata = this.encodeExactInputSingle(swapParams);
     
+    console.log(`✓ Swap payload created:`);
+    console.log(`  - Fee tier: ${fee / 10000}%`);
+    console.log(`  - Expected output: ${ethers.formatEther(quote)}`);
+    console.log(`  - Min output (${slippagePercent}% slippage): ${ethers.formatEther(amountOutMin)}`);
+    console.log(`  - Estimated gas: ${gasEstimate.toString()}`);
+    
+    return {
+      poolDetails,
+      quote: {
+        amountOut: quote.toString(),
+        amountOutMin: amountOutMin.toString(),
+        fee,
+        gasEstimate: gasEstimate.toString(),
+        allQuotes
+      },
+      swapParams,
+      swapCalldata,
+      deadline,
+      routerAddress: this.routerAddress
+    };
+  }
+
+  async swapNativeForToken(tokenOut, amountIn, slippagePercent = 5) {
+    console.log(`\n--- Swapping ${this.networkConfig.symbol} for Token ---`);
+    await this.getProvider();
+    
+    const amountInWei = ethers.parseEther(amountIn.toString());
+    const wrappedNative = WRAPPED_NATIVE[this.chainId];
+    
+    const balance = await this.provider.getBalance(this.account);
+    if (balance < amountInWei) {
+      throw new Error(`Insufficient ${this.networkConfig.symbol} balance`);
+    }
+    
+    const { fee, quote } = await this.fetchQuote(wrappedNative, tokenOut, amountInWei);
+    const amountOutMin = quote ? quote * BigInt(100 - slippagePercent) / BigInt(100) : 0n;
+    const deadline = Math.floor(Date.now() / 1000) + 1200;
+    
+    const router = new ethers.Contract(this.routerAddress, UNISWAP_V3_ROUTER_ABI, this.signer);
+    const swapCalldata = this.encodeExactInputSingle({
+      tokenIn: wrappedNative,
+      tokenOut,
+      fee,
+      recipient: this.account,
+      amountIn: amountInWei,
+      amountOutMinimum: amountOutMin,
+      sqrtPriceLimitX96: 0
+    });
+    
     const tx = await router['multicall(uint256,bytes[])'](deadline, [swapCalldata], {
       value: amountInWei,
       gasLimit: 350000n
     });
-    
     const receipt = await tx.wait();
     
     return {
@@ -271,7 +483,6 @@ class SwapService {
     const decimals = await token.decimals();
     const amountInWei = ethers.parseUnits(amountIn.toString(), decimals);
     const wrappedNative = WRAPPED_NATIVE[this.chainId];
-    const deadline = Math.floor(Date.now() / 1000) + 1200;
     
     const tokenBalance = await token.balanceOf(this.account);
     if (tokenBalance < amountInWei) {
@@ -280,29 +491,27 @@ class SwapService {
     
     await this.approveToken(tokenIn, this.routerAddress, amountInWei);
     
-    const { fee, quote } = await this.findBestFeeTier(tokenIn, wrappedNative, amountInWei);
+    const { fee, quote } = await this.fetchQuote(tokenIn, wrappedNative, amountInWei);
     const amountOutMin = quote ? quote * BigInt(100 - slippagePercent) / BigInt(100) : 0n;
+    const deadline = Math.floor(Date.now() / 1000) + 1200;
     
     const router = new ethers.Contract(this.routerAddress, UNISWAP_V3_ROUTER_ABI, this.signer);
-    
-    const swapParams = {
-      tokenIn: tokenIn,
+    const swapCalldata = this.encodeExactInputSingle({
+      tokenIn,
       tokenOut: wrappedNative,
-      fee: fee,
+      fee,
       recipient: ADDRESS_THIS,
       amountIn: amountInWei,
       amountOutMinimum: amountOutMin,
       sqrtPriceLimitX96: 0
-    };
+    });
     
-    const swapCalldata = this.encodeExactInputSingle(swapParams);
     const iface = new ethers.Interface(UNISWAP_V3_ROUTER_ABI);
     const unwrapCalldata = iface.encodeFunctionData('unwrapWETH9', [amountOutMin, this.account]);
     
     const tx = await router['multicall(uint256,bytes[])'](deadline, [swapCalldata, unwrapCalldata], {
       gasLimit: 450000n
     });
-    
     const receipt = await tx.wait();
     
     return {
@@ -319,11 +528,8 @@ class SwapService {
     await this.getProvider();
     
     const tokenInContract = this.getTokenContract(tokenIn);
-    const tokenOutContract = this.getTokenContract(tokenOut);
-    
     const decimalsIn = await tokenInContract.decimals();
     const amountInWei = ethers.parseUnits(amountIn.toString(), decimalsIn);
-    const deadline = Math.floor(Date.now() / 1000) + 1200;
     
     const tokenBalance = await tokenInContract.balanceOf(this.account);
     if (tokenBalance < amountInWei) {
@@ -332,27 +538,24 @@ class SwapService {
     
     await this.approveToken(tokenIn, this.routerAddress, amountInWei);
     
-    const { fee, quote } = await this.findBestFeeTier(tokenIn, tokenOut, amountInWei);
+    const { fee, quote } = await this.fetchQuote(tokenIn, tokenOut, amountInWei);
     const amountOutMin = quote ? quote * BigInt(100 - slippagePercent) / BigInt(100) : 0n;
+    const deadline = Math.floor(Date.now() / 1000) + 1200;
     
     const router = new ethers.Contract(this.routerAddress, UNISWAP_V3_ROUTER_ABI, this.signer);
-    
-    const swapParams = {
-      tokenIn: tokenIn,
-      tokenOut: tokenOut,
-      fee: fee,
+    const swapCalldata = this.encodeExactInputSingle({
+      tokenIn,
+      tokenOut,
+      fee,
       recipient: this.account,
       amountIn: amountInWei,
       amountOutMinimum: amountOutMin,
       sqrtPriceLimitX96: 0
-    };
-    
-    const swapCalldata = this.encodeExactInputSingle(swapParams);
+    });
     
     const tx = await router['multicall(uint256,bytes[])'](deadline, [swapCalldata], {
       gasLimit: 400000n
     });
-    
     const receipt = await tx.wait();
     
     return {
@@ -455,6 +658,9 @@ module.exports = {
   STABLECOINS,
   UNISWAP_V3_QUOTER,
   UNISWAP_V3_ROUTER_ABI,
+  UNISWAP_V3_FACTORY,
   ERC20_ABI,
-  WETH_ABI
+  WETH_ABI,
+  FACTORY_ABI,
+  POOL_ABI
 };

@@ -1,383 +1,213 @@
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
-const { NETWORK_CONFIGS, ALCHEMY_API_KEY, ALCHEMY_ENDPOINTS } = require('./networkconfig');
+const { ethers } = require('ethers');
+const { NETWORK_CONFIGS, WRAPPED_NATIVE, STABLECOINS, DEX_ROUTERS, UNISWAP_V3_QUOTER } = require('./networkconfig');
+const { SwapService, MultiChainSwapManager } = require('./swap');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
+// Add BigInt serialization support for JSON
+BigInt.prototype.toJSON = function() { return this.toString(); };
+
 app.use(cors());
 app.use(express.json());
 
-// Helper function to fetch block timestamp using eth_getBlockByNumber
+// Helper: Get token address from key
+const getTokenAddress = (tokenKey, chainId) => {
+  if (tokenKey === 'native' || tokenKey === 'wrappedNative') return WRAPPED_NATIVE[chainId];
+  if (tokenKey.startsWith('0x')) return tokenKey;
+  const stables = STABLECOINS[chainId];
+  return stables?.[tokenKey.toUpperCase()] || tokenKey;
+};
+
 async function fetchBlockTimestamp(blockNum, rpcUrl) {
   try {
-    const requestBody = {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "eth_getBlockByNumber",
-      params: [blockNum, false] // false = don't include transaction details
-    };
-
     const response = await fetch(rpcUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody)
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_getBlockByNumber",
+        params: [blockNum, false]
+      })
     });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-    if (data.result && data.result.timestamp) {
-      // Convert hex timestamp to decimal, then to ISO string
-      const timestampDecimal = parseInt(data.result.timestamp, 16);
-      const date = new Date(timestampDecimal * 1000);
-      return date.toISOString();
+    if (response.ok) {
+      const data = await response.json();
+      if (data.result?.timestamp) {
+        return new Date(parseInt(data.result.timestamp, 16) * 1000).toISOString();
+      }
     }
   } catch (error) {
-    console.error(`Failed to fetch block timestamp for ${blockNum}:`, error.message);
+    console.error(`Failed to fetch block timestamp: ${error.message}`);
   }
   return null;
 }
 
-// Helper function to batch fetch transaction receipts to get status (success/failed)
+
 async function fetchTransactionReceiptsBatch(txHashes, rpcUrl, batchSize = 10) {
   const results = new Map();
-  
   for (let i = 0; i < txHashes.length; i += batchSize) {
     const batch = txHashes.slice(i, i + batchSize);
-    const batchRequests = batch.map((hash, index) => ({
-      jsonrpc: "2.0",
-      id: i + index,
-      method: "eth_getTransactionReceipt",
-      params: [hash]
-    }));
-    
     try {
       const response = await fetch(rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(batchRequests)
+        body: JSON.stringify(batch.map((hash, index) => ({
+          jsonrpc: "2.0",
+          id: i + index,
+          method: "eth_getTransactionReceipt",
+          params: [hash]
+        })))
       });
       
       if (response.ok) {
         const data = await response.json();
-        const responses = Array.isArray(data) ? data : [data];
-        
-        responses.forEach((item, index) => {
+        (Array.isArray(data) ? data : [data]).forEach((item, index) => {
           if (item.result) {
-            const txHash = batch[index];
-            const status = item.result.status;
-            results.set(txHash, {
-              status: status === '0x1' ? 'success' : status === '0x0' ? 'failed' : 'pending',
+            results.set(batch[index], {
+              status: item.result.status === '0x1' ? 'success' : item.result.status === '0x0' ? 'failed' : 'pending',
               contractAddress: item.result.contractAddress
             });
           }
         });
       }
     } catch (error) {
-      console.error(`Batch receipt fetch error:`, error.message);
+      console.error(`Batch receipt fetch error: ${error.message}`);
     }
-    
-    if (i + batchSize < txHashes.length) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
+    if (i + batchSize < txHashes.length) await new Promise(resolve => setTimeout(resolve, 100));
   }
-  
   return results;
 }
 
-// Helper function to get network RPC URL with priority
-function getNetworkRpcUrl(chainId) {
-  const config = NETWORK_CONFIGS[chainId];
-  if (!config) return null;
-  return config.rpcUrl;
-}
+async function fetchNetworkTransactions(walletAddress, network, rpcUrl, categories) {
+  const createRequest = (id, address, isFrom) => ({
+    jsonrpc: "2.0",
+    id,
+    method: "alchemy_getAssetTransfers",
+    params: [{
+      fromBlock: "0x0",
+      [isFrom ? 'fromAddress' : 'toAddress']: address,
+      category: categories,
+      withMetadata: true,
+      excludeZeroValue: false,
+      maxCount: "0x3e8"
+    }]
+  });
 
-// Main function to fetch transaction history
-async function getTransactionHistory(walletAddress, networkMode = 'mainnet') {
+  const timeout = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error('Request timeout')), 10000)
+  );
+
   try {
-    // Validate wallet address
-    if (!walletAddress || !walletAddress.match(/^0x[a-fA-F0-9]{40}$/)) {
-      throw new Error('Invalid wallet address format');
-    }
+    const [fromResponse, toResponse] = await Promise.all([
+      Promise.race([fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(createRequest(0, walletAddress, true))
+      }), timeout]).catch(err => null),
+      Promise.race([fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(createRequest(1, walletAddress, false))
+      }), timeout]).catch(err => null)
+    ]);
 
-    // Validate network mode
-    if (!['mainnet', 'testnet'].includes(networkMode)) {
-      throw new Error('Invalid network mode. Must be "mainnet" or "testnet"');
-    }
-
-    // Categories for different networks
-    // IMPORTANT: Alchemy only supports 'internal' category for Ethereum (all testnets) and Polygon Mainnet
-    const ethCategories = ["external", "internal", "erc20", "erc721", "erc1155"];
-    const polygonMainnetCategories = ["external", "internal", "erc20", "erc721", "erc1155"];
-    // All other networks (L2s, BNB, Avalanche, Polygon testnets) don't support 'internal'
-    const standardCategories = ["external", "erc20", "erc721", "erc1155"];
-
-    // Build comprehensive network list from centralized config
-    const allNetworks = [];
-    
-    if (networkMode === 'mainnet') {
-      allNetworks.push(
-        { name: NETWORK_CONFIGS[1].name, url: NETWORK_CONFIGS[1].rpcUrl, categories: ethCategories },
-        { name: NETWORK_CONFIGS[137].name, url: NETWORK_CONFIGS[137].rpcUrl, categories: polygonMainnetCategories },
-        { name: NETWORK_CONFIGS[56].name, url: NETWORK_CONFIGS[56].rpcUrl, categories: standardCategories },
-        { name: NETWORK_CONFIGS[42161].name, url: NETWORK_CONFIGS[42161].rpcUrl, categories: standardCategories },
-        { name: NETWORK_CONFIGS[10].name, url: NETWORK_CONFIGS[10].rpcUrl, categories: standardCategories },
-        { name: NETWORK_CONFIGS[8453].name, url: NETWORK_CONFIGS[8453].rpcUrl, categories: standardCategories },
-        { name: NETWORK_CONFIGS[43114].name, url: NETWORK_CONFIGS[43114].rpcUrl, categories: standardCategories }
-      );
-    } else {
-      allNetworks.push(
-        { name: NETWORK_CONFIGS[11155111].name, url: NETWORK_CONFIGS[11155111].rpcUrl, categories: ethCategories },
-        { name: NETWORK_CONFIGS[80002].name, url: NETWORK_CONFIGS[80002].rpcUrl, categories: standardCategories },
-        { name: NETWORK_CONFIGS[97].name, url: NETWORK_CONFIGS[97].rpcUrl, categories: standardCategories },
-        { name: NETWORK_CONFIGS[421614].name, url: NETWORK_CONFIGS[421614].rpcUrl, categories: standardCategories },
-        { name: NETWORK_CONFIGS[11155420].name, url: NETWORK_CONFIGS[11155420].rpcUrl, categories: standardCategories },
-        { name: NETWORK_CONFIGS[84532].name, url: NETWORK_CONFIGS[84532].rpcUrl, categories: standardCategories },
-        { name: NETWORK_CONFIGS[43113].name, url: NETWORK_CONFIGS[43113].rpcUrl, categories: standardCategories }
-      );
-    }
-    
-    console.log(`\n🔍 Fetching transactions for ${networkMode.toUpperCase()} networks (${allNetworks.length} chains)`);
-
-    const allTransactions = [];
-
-    for (const network of allNetworks) {
-      try {
-        console.log(`\n========== Fetching from ${network.name} ==========`);
-        console.log(`📋 Categories: [${network.categories.join(', ')}]`);
-        
-        // Fetch both 'from' and 'to' transactions
-        const fromData = {
-          jsonrpc: "2.0",
-          id: 0,
-          method: "alchemy_getAssetTransfers",
-          params: [{
-            fromBlock: "0x0",
-            fromAddress: walletAddress,
-            category: network.categories,
-            withMetadata: true,
-            excludeZeroValue: false,
-            maxCount: "0x3e8" // 1000 transactions max
-          }]
-        };
-
-        const toData = {
-          jsonrpc: "2.0",
-          id: 1,
-          method: "alchemy_getAssetTransfers",
-          params: [{
-            fromBlock: "0x0",
-            toAddress: walletAddress,
-            category: network.categories,
-            withMetadata: true,
-            excludeZeroValue: false,
-            maxCount: "0x3e8" // 1000 transactions max
-          }]
-        };
-
-        // Fetch sent transactions with timeout
-        const fromResponse = await Promise.race([
-          fetch(network.url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(fromData)
-          }),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Request timeout (30s)')), 30000)
-          )
-        ]);
-
-        // Fetch received transactions with timeout
-        const toResponse = await Promise.race([
-          fetch(network.url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(toData)
-          }),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Request timeout (30s)')), 30000)
-          )
-        ]);
-
-        let networkTransactions = [];
-
-        // Process 'from' transactions
-        if (fromResponse && fromResponse.ok) {
-          const contentType = fromResponse.headers.get('content-type');
-          if (contentType && contentType.includes('application/json')) {
-            const fromResult = await fromResponse.json();
-            if (fromResult.error) {
-              console.log(`❌ ${network.name} (Sent): API Error - ${fromResult.error.message}`);
-            } else if (fromResult.result && fromResult.result.transfers) {
-              console.log(`✅ ${network.name} (Sent): Found ${fromResult.result.transfers.length} transfers`);
-              networkTransactions.push(...fromResult.result.transfers.map(tx => ({
-                ...tx,
-                direction: 'sent',
-                network: network.name
-              })));
-            }
-          }
-        } else if (fromResponse) {
-          console.log(`⚠️  ${network.name} (Sent): HTTP ${fromResponse.status} - ${fromResponse.statusText}`);
-        }
-
-        // Process 'to' transactions
-        if (toResponse && toResponse.ok) {
-          const contentType = toResponse.headers.get('content-type');
-          if (contentType && contentType.includes('application/json')) {
-            const toResult = await toResponse.json();
-            if (toResult.error) {
-              console.log(`❌ ${network.name} (Received): API Error - ${toResult.error.message}`);
-            } else if (toResult.result && toResult.result.transfers) {
-              console.log(`✅ ${network.name} (Received): Found ${toResult.result.transfers.length} transfers`);
-              networkTransactions.push(...toResult.result.transfers.map(tx => ({
-                ...tx,
-                direction: 'received',
-                network: network.name
-              })));
-            }
-          }
-        } else if (toResponse) {
-          console.log(`⚠️  ${network.name} (Received): HTTP ${toResponse.status} - ${toResponse.statusText}`);
-        }
-
-        // Remove duplicates based on hash
-        const uniqueTransactions = Array.from(
-          new Map(networkTransactions.map(tx => [tx.hash, tx])).values()
-        );
-
-        // Fetch transaction receipts to get actual status (success/failed)
-        if (uniqueTransactions.length > 0) {
-          console.log(`📋 Fetching receipts for ${uniqueTransactions.length} transactions...`);
-          const txHashes = uniqueTransactions.map(tx => tx.hash);
-          const receipts = await fetchTransactionReceiptsBatch(txHashes, network.url);
-          
-          uniqueTransactions.forEach(tx => {
-            const receipt = receipts.get(tx.hash);
-            if (receipt) {
-              tx.txStatus = receipt.status;
-              if (receipt.contractAddress && !tx.contractAddress) {
-                tx.contractAddress = receipt.contractAddress;
-              }
-            } else {
-              tx.txStatus = 'success';
-            }
-          });
-          
-          const failedCount = uniqueTransactions.filter(tx => tx.txStatus === 'failed').length;
-          console.log(`✅ Status: ${uniqueTransactions.length - failedCount} success, ${failedCount} failed`);
-        }
-
-        // Fetch missing timestamps for transactions without metadata.blockTimestamp
-        for (const tx of uniqueTransactions) {
-          if (!tx.metadata?.blockTimestamp && tx.blockNum) {
-            console.log(`⏱️  Fetching timestamp for block ${tx.blockNum}...`);
-            const timestamp = await fetchBlockTimestamp(tx.blockNum, network.url);
-            if (timestamp) {
-              if (!tx.metadata) {
-                tx.metadata = {};
-              }
-              tx.metadata.blockTimestamp = timestamp;
-              console.log(`✅ Retrieved timestamp: ${timestamp}`);
-            }
-          }
-        }
-
-        // Sort by block number
-        uniqueTransactions.sort((a, b) => {
-          const blockA = parseInt(a.blockNum, 16);
-          const blockB = parseInt(b.blockNum, 16);
-          return blockA - blockB;
-        });
-
-        allTransactions.push(...uniqueTransactions);
-
-        // Display transactions for this network
-        if (uniqueTransactions.length > 0) {
-          console.log(`\n--- All Transactions for ${network.name} (${uniqueTransactions.length} total) ---`);
-          uniqueTransactions.forEach((tx, index) => {
-            const isContractDeployment = !tx.to || tx.to === null;
-            console.log(`\nTransaction ${index + 1}:`);
-            console.log(`  Hash: ${tx.hash}`);
-            console.log(`  Block: ${tx.blockNum} (${parseInt(tx.blockNum, 16)})`);
-            console.log(`  From: ${tx.from}`);
-            console.log(`  To: ${tx.to || 'Contract Deployment'}`);
-            console.log(`  Value: ${tx.value || '0'} ${tx.asset || ''}`);
-            console.log(`  Category: ${tx.category}`);
-            console.log(`  Direction: ${tx.direction}`);
-            console.log(`  Type: ${isContractDeployment ? 'Contract Deployment' : 'Transfer'}`);
-            if (isContractDeployment) {
-              console.log(`  Contract Address: ${tx.contractAddress || 'Not available from API'}`);
-            }
-            if (tx.metadata) {
-              console.log(`  Block Timestamp: ${tx.metadata.blockTimestamp || 'N/A'}`);
-            }
-          });
-        } else {
-          console.log(`⚠️  ${network.name}: No transactions found`);
-        }
-      } catch (err) {
-        // Enhanced error logging for better debugging
-        if (err.type === 'invalid-json' || err.message?.includes('invalid json')) {
-          console.log(`❌ ${network.name}: Invalid JSON response from API`);
-        } else if (err.code === 'ENOTFOUND' || err.message?.includes('ENOTFOUND')) {
-          console.log(`❌ ${network.name}: Network unreachable - DNS resolution failed`);
-        } else if (err.code === 'ECONNREFUSED' || err.message?.includes('ECONNREFUSED')) {
-          console.log(`❌ ${network.name}: Connection refused`);
-        } else if (err.message?.includes('fetch failed')) {
-          console.log(`❌ ${network.name}: Network request failed - possible endpoint or network issue`);
-        } else {
-          console.log(`❌ ${network.name}: ${err.message}`);
+    const transactions = [];
+    for (const [response, direction] of [[fromResponse, 'sent'], [toResponse, 'received']]) {
+      if (response?.ok && response.headers.get('content-type')?.includes('application/json')) {
+        const result = await response.json();
+        if (result.error) {
+          console.log(`❌ ${network} (${direction}): ${result.error.message}`);
+        } else if (result.result?.transfers) {
+          console.log(`✅ ${network} (${direction}): ${result.result.transfers.length} transfers`);
+          transactions.push(...result.result.transfers.map(tx => ({ ...tx, direction, network })));
         }
       }
     }
 
-    // Summary
-    console.log('\n\n========== SUMMARY ==========');
-    console.log(`Total transactions across all networks: ${allTransactions.length}`);
-    
-    const byNetwork = allTransactions.reduce((acc, tx) => {
-      acc[tx.network] = (acc[tx.network] || 0) + 1;
-      return acc;
-    }, {});
-    
-    console.log('\nTransactions per network:');
-    Object.entries(byNetwork).forEach(([network, count]) => {
-      console.log(`  ${network}: ${count}`);
-    });
+    const unique = Array.from(new Map(transactions.map(tx => [tx.hash, tx])).values());
 
-    const byDirection = allTransactions.reduce((acc, tx) => {
-      acc[tx.direction] = (acc[tx.direction] || 0) + 1;
-      return acc;
-    }, {});
-    
-    console.log('\nTransactions by direction:');
-    Object.entries(byDirection).forEach(([direction, count]) => {
-      console.log(`  ${direction}: ${count}`);
-    });
+    if (unique.length > 0) {
+      const receipts = await fetchTransactionReceiptsBatch(unique.map(tx => tx.hash), rpcUrl);
+      unique.forEach(tx => {
+        const receipt = receipts.get(tx.hash);
+        tx.txStatus = receipt?.status || 'success';
+        if (receipt?.contractAddress && !tx.contractAddress) tx.contractAddress = receipt.contractAddress;
+      });
 
-    const contractDeployments = allTransactions.filter(tx => !tx.to || tx.to === null);
-    console.log(`\nContract Deployments: ${contractDeployments.length}`);
+      for (const tx of unique) {
+        if (!tx.metadata?.blockTimestamp && tx.blockNum) {
+          const timestamp = await fetchBlockTimestamp(tx.blockNum, rpcUrl);
+          if (timestamp) {
+            if (!tx.metadata) tx.metadata = {};
+            tx.metadata.blockTimestamp = timestamp;
+          }
+        }
+      }
+    }
 
-    // Sort all transactions by timestamp (most recent first) for frontend display
-    allTransactions.sort((a, b) => {
-      const timeA = a.metadata?.blockTimestamp ? new Date(a.metadata.blockTimestamp).getTime() : 0;
-      const timeB = b.metadata?.blockTimestamp ? new Date(b.metadata.blockTimestamp).getTime() : 0;
-      return timeB - timeA; // Descending order (newest first)
-    });
-
-    console.log(`\n📋 Transactions sorted by timestamp (newest first)`);
-
-    return allTransactions;
-  } catch (error) {
-    console.error('Fatal Error:', error);
-    throw error;
+    return unique;
+  } catch (err) {
+    console.error(`❌ ${network}: ${err.message}`);
+    return [];
   }
+}
+
+
+async function getTransactionHistory(walletAddress, networkMode = 'mainnet') {
+  if (!walletAddress?.match(/^0x[a-fA-F0-9]{40}$/)) {
+    throw new Error('Invalid wallet address format');
+  }
+  if (!['mainnet', 'testnet'].includes(networkMode)) {
+    throw new Error('Invalid network mode');
+  }
+
+  const ethCategories = ["external", "internal", "erc20", "erc721", "erc1155"];
+  const standardCategories = ["external", "erc20", "erc721", "erc1155"];
+
+  const networks = networkMode === 'mainnet' ? [
+    { name: NETWORK_CONFIGS[1].name, url: NETWORK_CONFIGS[1].rpcUrl, categories: ethCategories },
+    { name: NETWORK_CONFIGS[137].name, url: NETWORK_CONFIGS[137].rpcUrl, categories: ethCategories },
+    { name: NETWORK_CONFIGS[56].name, url: NETWORK_CONFIGS[56].rpcUrl, categories: standardCategories },
+    { name: NETWORK_CONFIGS[42161].name, url: NETWORK_CONFIGS[42161].rpcUrl, categories: standardCategories },
+    { name: NETWORK_CONFIGS[10].name, url: NETWORK_CONFIGS[10].rpcUrl, categories: standardCategories },
+    { name: NETWORK_CONFIGS[8453].name, url: NETWORK_CONFIGS[8453].rpcUrl, categories: standardCategories },
+    { name: NETWORK_CONFIGS[43114].name, url: NETWORK_CONFIGS[43114].rpcUrl, categories: standardCategories }
+  ] : [
+    { name: NETWORK_CONFIGS[11155111].name, url: NETWORK_CONFIGS[11155111].rpcUrl, categories: ethCategories },
+    { name: NETWORK_CONFIGS[80002].name, url: NETWORK_CONFIGS[80002].rpcUrl, categories: standardCategories },
+    { name: NETWORK_CONFIGS[97].name, url: NETWORK_CONFIGS[97].rpcUrl, categories: standardCategories },
+    { name: NETWORK_CONFIGS[421614].name, url: NETWORK_CONFIGS[421614].rpcUrl, categories: standardCategories },
+    { name: NETWORK_CONFIGS[11155420].name, url: NETWORK_CONFIGS[11155420].rpcUrl, categories: standardCategories },
+    { name: NETWORK_CONFIGS[84532].name, url: NETWORK_CONFIGS[84532].rpcUrl, categories: standardCategories },
+    { name: NETWORK_CONFIGS[43113].name, url: NETWORK_CONFIGS[43113].rpcUrl, categories: standardCategories }
+  ];
+
+  console.log(`\n🔍 Fetching ${networkMode.toUpperCase()} transactions (${networks.length} chains in parallel)`);
+
+  // Fetch from all networks in parallel for better performance
+  const networkPromises = networks.map(network => 
+    fetchNetworkTransactions(walletAddress, network.name, network.url, network.categories)
+      .catch(err => {
+        console.error(`Failed to fetch from ${network.name}: ${err.message}`);
+        return []; // Return empty array on error, don't fail entire request
+      })
+  );
+  
+  const allNetworkResults = await Promise.all(networkPromises);
+  const allTransactions = allNetworkResults.flat();
+
+  allTransactions.sort((a, b) => {
+    const timeA = a.metadata?.blockTimestamp ? new Date(a.metadata.blockTimestamp).getTime() : 0;
+    const timeB = b.metadata?.blockTimestamp ? new Date(b.metadata.blockTimestamp).getTime() : 0;
+    return timeB - timeA;
+  });
+
+  console.log(`\n📋 Total: ${allTransactions.length} transactions`);
+  return allTransactions;
 }
 
 // API Routes
@@ -387,264 +217,48 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/transactions/:address', async (req, res) => {
   try {
-    const { address } = req.params;
-    const { mode } = req.query; // Get network mode from query params (mainnet or testnet)
+    // Set response timeout to 55 seconds (less than frontend timeout)
+    req.setTimeout(55000);
     
-    // Default to mainnet if mode is not specified
-    const networkMode = mode && ['mainnet', 'testnet'].includes(mode.toLowerCase()) 
-      ? mode.toLowerCase() 
-      : 'mainnet';
-    
-    console.log(`\n📡 API Request: Fetching ${networkMode.toUpperCase()} transactions for ${address}`);
-    
-    const transactions = await getTransactionHistory(address, networkMode);
-    
+    const networkMode = ['mainnet', 'testnet'].includes(req.query.mode?.toLowerCase()) 
+      ? req.query.mode.toLowerCase() : 'mainnet';
+    const transactions = await getTransactionHistory(req.params.address, networkMode);
     res.json({
       success: true,
-      address: address,
-      networkMode: networkMode,
+      address: req.params.address,
+      networkMode,
       totalTransactions: transactions.length,
-      transactions: transactions
+      transactions
     });
   } catch (error) {
-    console.error('API Error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to fetch transaction history'
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// New endpoint for custom network transactions
 app.post('/api/transactions/custom/:address', async (req, res) => {
   try {
-    const { address } = req.params;
     const { rpcUrl, networkName, categories } = req.body;
-    
     if (!rpcUrl || !networkName) {
-      return res.status(400).json({
-        success: false,
-        error: 'rpcUrl and networkName are required'
-      });
+      return res.status(400).json({ success: false, error: 'rpcUrl and networkName required' });
     }
-    
-    console.log(`\n📡 API Request: Fetching transactions for custom network ${networkName}`);
-    
-    // Use standard categories if not provided
     const txCategories = categories || ["external", "erc20", "erc721", "erc1155"];
-    
-    const transactions = await getCustomNetworkTransactions(address, rpcUrl, networkName, txCategories);
-    
+    const transactions = await fetchNetworkTransactions(req.params.address, networkName, rpcUrl, txCategories);
     res.json({
       success: true,
-      address: address,
+      address: req.params.address,
       network: networkName,
       totalTransactions: transactions.length,
-      transactions: transactions
+      transactions
     });
   } catch (error) {
-    console.error('API Error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to fetch transaction history'
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Function to fetch transactions from a custom network
-async function getCustomNetworkTransactions(walletAddress, rpcUrl, networkName, categories) {
-  try {
-    // Validate wallet address
-    if (!walletAddress || !walletAddress.match(/^0x[a-fA-F0-9]{40}$/)) {
-      throw new Error('Invalid wallet address format');
-    }
+// Swap API Routes
 
-    console.log(`\n🔍 Fetching transactions from custom network: ${networkName}`);
-    console.log(`📋 RPC URL: ${rpcUrl}`);
-    console.log(`📋 Categories: [${categories.join(', ')}]`);
-    
-    const allTransactions = [];
-
-    try {
-      // Fetch both 'from' and 'to' transactions
-      const fromData = {
-        jsonrpc: "2.0",
-        id: 0,
-        method: "alchemy_getAssetTransfers",
-        params: [{
-          fromBlock: "0x0",
-          fromAddress: walletAddress,
-          category: categories,
-          withMetadata: true,
-          excludeZeroValue: false,
-          maxCount: "0x3e8" // 1000 transactions max
-        }]
-      };
-
-      const toData = {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "alchemy_getAssetTransfers",
-        params: [{
-          fromBlock: "0x0",
-          toAddress: walletAddress,
-          category: categories,
-          withMetadata: true,
-          excludeZeroValue: false,
-          maxCount: "0x3e8" // 1000 transactions max
-        }]
-      };
-
-      // Fetch sent transactions with timeout
-      const fromResponse = await Promise.race([
-        fetch(rpcUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(fromData)
-        }),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Request timeout (30s)')), 30000)
-        )
-      ]);
-
-      // Fetch received transactions with timeout
-      const toResponse = await Promise.race([
-        fetch(rpcUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(toData)
-        }),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Request timeout (30s)')), 30000)
-        )
-      ]);
-
-      let networkTransactions = [];
-
-      // Process 'from' transactions
-      if (fromResponse && fromResponse.ok) {
-        const contentType = fromResponse.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          const fromResult = await fromResponse.json();
-          if (fromResult.error) {
-            console.log(`❌ ${networkName} (Sent): API Error - ${fromResult.error.message}`);
-          } else if (fromResult.result && fromResult.result.transfers) {
-            console.log(`✅ ${networkName} (Sent): Found ${fromResult.result.transfers.length} transfers`);
-            networkTransactions.push(...fromResult.result.transfers.map(tx => ({
-              ...tx,
-              direction: 'sent',
-              network: networkName
-            })));
-          }
-        }
-      } else if (fromResponse) {
-        console.log(`⚠️  ${networkName} (Sent): HTTP ${fromResponse.status} - ${fromResponse.statusText}`);
-      }
-
-      // Process 'to' transactions
-      if (toResponse && toResponse.ok) {
-        const contentType = toResponse.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          const toResult = await toResponse.json();
-          if (toResult.error) {
-            console.log(`❌ ${networkName} (Received): API Error - ${toResult.error.message}`);
-          } else if (toResult.result && toResult.result.transfers) {
-            console.log(`✅ ${networkName} (Received): Found ${toResult.result.transfers.length} transfers`);
-            networkTransactions.push(...toResult.result.transfers.map(tx => ({
-              ...tx,
-              direction: 'received',
-              network: networkName
-            })));
-          }
-        }
-      } else if (toResponse) {
-        console.log(`⚠️  ${networkName} (Received): HTTP ${toResponse.status} - ${toResponse.statusText}`);
-      }
-
-      // Remove duplicates based on hash
-      const uniqueTransactions = Array.from(
-        new Map(networkTransactions.map(tx => [tx.hash, tx])).values()
-      );
-
-      // Fetch transaction receipts to get actual status (success/failed)
-      if (uniqueTransactions.length > 0) {
-        console.log(`📋 Fetching receipts for ${uniqueTransactions.length} transactions...`);
-        const txHashes = uniqueTransactions.map(tx => tx.hash);
-        const receipts = await fetchTransactionReceiptsBatch(txHashes, rpcUrl);
-        
-        uniqueTransactions.forEach(tx => {
-          const receipt = receipts.get(tx.hash);
-          if (receipt) {
-            tx.txStatus = receipt.status;
-            if (receipt.contractAddress && !tx.contractAddress) {
-              tx.contractAddress = receipt.contractAddress;
-            }
-          } else {
-            tx.txStatus = 'success';
-          }
-        });
-        
-        const failedCount = uniqueTransactions.filter(tx => tx.txStatus === 'failed').length;
-        console.log(`✅ Status: ${uniqueTransactions.length - failedCount} success, ${failedCount} failed`);
-      }
-
-      // Fetch missing timestamps for transactions without metadata.blockTimestamp
-      for (const tx of uniqueTransactions) {
-        if (!tx.metadata?.blockTimestamp && tx.blockNum) {
-          console.log(`⏱️  Fetching timestamp for block ${tx.blockNum}...`);
-          const timestamp = await fetchBlockTimestamp(tx.blockNum, rpcUrl);
-          if (timestamp) {
-            if (!tx.metadata) {
-              tx.metadata = {};
-            }
-            tx.metadata.blockTimestamp = timestamp;
-            console.log(`✅ Retrieved timestamp: ${timestamp}`);
-          }
-        }
-      }
-
-      // Sort by timestamp (most recent first)
-      uniqueTransactions.sort((a, b) => {
-        const timeA = a.metadata?.blockTimestamp ? new Date(a.metadata.blockTimestamp).getTime() : 0;
-        const timeB = b.metadata?.blockTimestamp ? new Date(b.metadata.blockTimestamp).getTime() : 0;
-        return timeB - timeA;
-      });
-
-      allTransactions.push(...uniqueTransactions);
-
-      console.log(`\n✅ ${networkName}: Found ${uniqueTransactions.length} transactions`);
-    } catch (err) {
-      console.error(`❌ ${networkName}: ${err.message}`);
-      throw err;
-    }
-
-    return allTransactions;
-  } catch (error) {
-    console.error('Fatal Error:', error);
-    throw error;
-  }
-}
-
-// ============================================
-// SWAP API ENDPOINTS
-// ============================================
-
-const {
-  SwapService,
-  MultiChainSwapManager,
-  getNetworkConfig,
-  getMainnetChainIds,
-  getTestnetChainIds
-} = require('./swap');
-
-// Import remaining constants from networkconfig (already imported at top, but DEX_ROUTERS etc. are needed here)
-const { DEX_ROUTERS, WRAPPED_NATIVE, STABLECOINS } = require('./networkconfig');
-
-// Get supported chains
 app.get('/api/swap/chains', (req, res) => {
   try {
-    const { mode } = req.query;
-    
     let chains = Object.entries(NETWORK_CONFIGS).map(([chainId, config]) => ({
       chainId: parseInt(chainId),
       name: config.name,
@@ -655,135 +269,172 @@ app.get('/api/swap/chains', (req, res) => {
       wrappedNative: WRAPPED_NATIVE[chainId],
       stablecoins: STABLECOINS[chainId] || {}
     }));
-    
-    if (mode === 'mainnet') {
-      chains = chains.filter(c => c.type === 'mainnet');
-    } else if (mode === 'testnet') {
-      chains = chains.filter(c => c.type === 'testnet');
-    }
-    
-    res.json({
-      success: true,
-      chains,
-      count: chains.length
-    });
+    if (req.query.mode) chains = chains.filter(c => c.type === req.query.mode);
+    res.json({ success: true, chains, count: chains.length });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Get tokens for a specific chain
 app.get('/api/swap/tokens/:chainId', (req, res) => {
   try {
     const chainId = parseInt(req.params.chainId);
     const config = NETWORK_CONFIGS[chainId];
-    
-    if (!config) {
-      return res.status(404).json({
-        success: false,
-        error: `Chain ${chainId} not supported`
-      });
-    }
+    if (!config) return res.status(404).json({ success: false, error: `Chain ${chainId} not supported` });
     
     const tokens = {
-      native: {
-        symbol: config.symbol,
-        name: `${config.name} Native Token`,
-        address: 'native',
-        decimals: 18
-      },
-      wrappedNative: {
-        symbol: `W${config.symbol}`,
-        name: `Wrapped ${config.symbol}`,
-        address: WRAPPED_NATIVE[chainId],
-        decimals: 18
-      }
+      native: { symbol: config.symbol, name: `${config.name} Native Token`, address: 'native', decimals: 18 },
+      wrappedNative: { symbol: `W${config.symbol}`, name: `Wrapped ${config.symbol}`, address: WRAPPED_NATIVE[chainId], decimals: 18 }
     };
     
     const stables = STABLECOINS[chainId];
     if (stables) {
       Object.entries(stables).forEach(([symbol, address]) => {
-        tokens[symbol.toLowerCase()] = {
-          symbol,
-          address,
-          decimals: symbol === 'DAI' ? 18 : 6
-        };
+        tokens[symbol.toLowerCase()] = { symbol, address, decimals: symbol === 'DAI' ? 18 : 6 };
       });
     }
-    
-    res.json({
-      success: true,
-      chainId,
-      network: config.name,
-      tokens
-    });
+    res.json({ success: true, chainId, network: config.name, tokens });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Get DEXes for a specific chain
 app.get('/api/swap/dexes/:chainId', (req, res) => {
   try {
     const chainId = parseInt(req.params.chainId);
     const config = NETWORK_CONFIGS[chainId];
-    
-    if (!config) {
-      return res.status(404).json({
-        success: false,
-        error: `Chain ${chainId} not supported`
-      });
-    }
+    if (!config) return res.status(404).json({ success: false, error: `Chain ${chainId} not supported` });
     
     const dexes = DEX_ROUTERS[chainId] || {};
-    
     res.json({
       success: true,
       chainId,
       network: config.name,
       defaultDex: config.defaultDex,
-      dexes: Object.entries(dexes).map(([name, address]) => ({
-        name,
-        address,
-        isDefault: name === config.defaultDex
-      }))
+      dexes: Object.entries(dexes).map(([name, address]) => ({ name, address, isDefault: name === config.defaultDex }))
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Get swap quote (price estimation)
 app.post('/api/swap/quote', async (req, res) => {
   try {
-    const { chainId, tokenIn, tokenOut, amountIn, dex } = req.body;
-    
-    if (!chainId || !tokenIn || !tokenOut || !amountIn) {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing required fields: chainId, tokenIn, tokenOut, amountIn'
-      });
+    const { chainId, tokenIn, tokenOut, amountIn, fromDecimals, toDecimals } = req.body;
+    if (!chainId || tokenIn === undefined || tokenOut === undefined || !amountIn) {
+      return res.status(400).json({ success: false, error: 'Missing required fields' });
     }
     
     const config = NETWORK_CONFIGS[chainId];
-    if (!config) {
-      return res.status(404).json({
-        success: false,
-        error: `Chain ${chainId} not supported`
-      });
+    if (!config) return res.status(404).json({ success: false, error: `Chain ${chainId} not supported` });
+
+    const tokenInAddress = getTokenAddress(tokenIn, chainId);
+    const tokenOutAddress = getTokenAddress(tokenOut, chainId);
+
+    if ((tokenIn === 'native' && tokenOut === 'wrappedNative') || (tokenIn === 'wrappedNative' && tokenOut === 'native')) {
+      return res.json({ success: true, chainId, network: config.name, tokenIn, tokenOut, amountIn, estimatedOutput: amountIn, feeTier: 0, isWrapUnwrap: true });
+    }
+
+    const quoterAddress = UNISWAP_V3_QUOTER[chainId];
+    if (!quoterAddress) {
+      return res.json({ success: true, chainId, network: config.name, tokenIn, tokenOut, amountIn, estimatedOutput: (parseFloat(amountIn) * 0.98).toString(), feeTier: 3000, note: 'Estimated (quoter unavailable)' });
+    }
+
+    const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+    const quoter = new ethers.Contract(quoterAddress, ['function quoteExactInputSingle(tuple(address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96) params) external returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)'], provider);
+    
+    const amountInWei = ethers.parseUnits(amountIn.toString(), fromDecimals || 18);
+    let bestQuote = null, bestFee = 3000;
+
+    for (const fee of [500, 3000, 10000]) {
+      try {
+        const result = await quoter.quoteExactInputSingle.staticCall({ tokenIn: tokenInAddress, tokenOut: tokenOutAddress, amountIn: amountInWei, fee, sqrtPriceLimitX96: 0 });
+        const quote = result.amountOut || result[0];
+        if (!bestQuote || quote > bestQuote) {
+          bestQuote = quote;
+          bestFee = fee;
+        }
+      } catch { continue; }
+    }
+
+    if (bestQuote) {
+      res.json({ success: true, chainId, network: config.name, tokenIn, tokenOut, amountIn, estimatedOutput: ethers.formatUnits(bestQuote, toDecimals || 18), feeTier: bestFee });
+    } else {
+      res.json({ success: false, error: 'No liquidity pool found', chainId, network: config.name });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/swap/pool-details', async (req, res) => {
+  try {
+    const { chainId, tokenIn, tokenOut } = req.body;
+    if (!chainId || !tokenIn || !tokenOut) {
+      return res.status(400).json({ success: false, error: 'Missing required fields' });
     }
     
-    // Note: For actual quotes, you'd need to query the DEX
-    // This is a placeholder response
+    const config = NETWORK_CONFIGS[chainId];
+    if (!config) return res.status(404).json({ success: false, error: `Chain ${chainId} not supported` });
+
+    const tokenInAddress = getTokenAddress(tokenIn, chainId);
+    const tokenOutAddress = getTokenAddress(tokenOut, chainId);
+    
+    const tempKey = process.env.REACT_APP_PRIVATE_KEY || '0x0000000000000000000000000000000000000000000000000000000000000001';
+    const service = new SwapService(tempKey, chainId);
+    const poolDetails = await service.getPoolDetails(tokenInAddress, tokenOutAddress);
+    
+    // Convert all BigInt values to strings/numbers for JSON serialization
+    const safePoolDetails = poolDetails.map(pool => ({
+      ...pool,
+      fee: Number(pool.fee),
+      tick: Number(pool.tick),
+      sqrtPriceX96: pool.sqrtPriceX96.toString(),
+      liquidity: pool.liquidity.toString()
+    }));
+    
+    res.json({ success: true, chainId, network: config.name, tokenIn, tokenOut, pools: safePoolDetails });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/swap/quote-detailed', async (req, res) => {
+  try {
+    const { chainId, tokenIn, tokenOut, amountIn, fromDecimals, toDecimals } = req.body;
+    if (!chainId || tokenIn === undefined || tokenOut === undefined || !amountIn) {
+      return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+    
+    const config = NETWORK_CONFIGS[chainId];
+    if (!config) return res.status(404).json({ success: false, error: `Chain ${chainId} not supported` });
+
+    const tokenInAddress = getTokenAddress(tokenIn, chainId);
+    const tokenOutAddress = getTokenAddress(tokenOut, chainId);
+
+    if ((tokenIn === 'native' && tokenOut === 'wrappedNative') || (tokenIn === 'wrappedNative' && tokenOut === 'native')) {
+      return res.json({ success: true, chainId, network: config.name, tokenIn, tokenOut, amountIn, estimatedOutput: amountIn, feeTier: 0, isWrapUnwrap: true, pools: [], allQuotes: [] });
+    }
+
+    const amountInWei = ethers.parseUnits(amountIn.toString(), fromDecimals || 18);
+    const tempKey = process.env.REACT_APP_PRIVATE_KEY || '0x0000000000000000000000000000000000000000000000000000000000000001';
+    const service = new SwapService(tempKey, chainId);
+    
+    const poolDetails = await service.getPoolDetails(tokenInAddress, tokenOutAddress);
+    const { fee, quote, gasEstimate, allQuotes, estimated } = await service.fetchQuote(tokenInAddress, tokenOutAddress, amountInWei);
+    
+    const decimalsOut = toDecimals || 18;
+    
+    // Convert all BigInt values to strings/numbers for JSON serialization
+    const safePoolDetails = poolDetails.map(pool => ({
+      ...pool,
+      fee: Number(pool.fee),
+      tick: Number(pool.tick),
+      sqrtPriceX96: pool.sqrtPriceX96.toString(),
+      liquidity: pool.liquidity.toString(),
+      simulated: pool.simulated || false
+    }));
+    
     res.json({
       success: true,
       chainId,
@@ -791,80 +442,101 @@ app.post('/api/swap/quote', async (req, res) => {
       tokenIn,
       tokenOut,
       amountIn,
-      estimatedOutput: 'Quote requires on-chain query',
-      dex: dex || config.defaultDex,
-      note: 'Connect wallet and execute swap for actual quote'
+      estimatedOutput: ethers.formatUnits(quote, decimalsOut),
+      feeTier: fee,
+      gasEstimate: gasEstimate.toString(),
+      pools: safePoolDetails,
+      allQuotes: allQuotes.map(q => ({ 
+        fee: q.fee, 
+        amountOut: q.amountOut.toString(), 
+        gasEstimate: q.gasEstimate.toString(),
+        estimated: q.estimated || false
+      })),
+      estimated: estimated || false,
+      warning: estimated ? 'Quote is estimated. Actual DEX may not be available on this chain.' : undefined
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    console.error('❌ Quote-detailed error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Execute swap (requires private key - for backend use only)
-app.post('/api/swap/execute', async (req, res) => {
+app.post('/api/swap/create-payload', async (req, res) => {
   try {
-    const { chainId, swapType, params, privateKey } = req.body;
-    
-    if (!chainId || !swapType || !params) {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing required fields: chainId, swapType, params'
-      });
+    const { chainId, tokenIn, tokenOut, amountIn, slippagePercent, fromDecimals } = req.body;
+    if (!chainId || !tokenIn || !tokenOut || !amountIn) {
+      return res.status(400).json({ success: false, error: 'Missing required fields' });
     }
     
-    // Use environment private key if not provided
-    const key = privateKey || process.env.REACT_APP_PRIVATE_KEY;
+    const config = NETWORK_CONFIGS[chainId];
+    if (!config) return res.status(404).json({ success: false, error: `Chain ${chainId} not supported` });
+
+    const tokenInAddress = getTokenAddress(tokenIn, chainId);
+    const tokenOutAddress = getTokenAddress(tokenOut, chainId);
     
-    if (!key) {
-      return res.status(400).json({
-        success: false,
-        error: 'Private key required for swap execution'
-      });
-    }
+    // Sanitize amountIn - limit to appropriate decimals
+    const decimalsIn = fromDecimals || 18;
+    const amountStr = typeof amountIn === 'number' ? amountIn.toFixed(decimalsIn) : String(amountIn);
+    // Truncate to max decimals to avoid overflow
+    const parts = amountStr.split('.');
+    const truncatedAmount = parts[1] ? `${parts[0]}.${parts[1].slice(0, decimalsIn)}` : parts[0];
+    const amountInWei = ethers.parseUnits(truncatedAmount, decimalsIn);
     
-    const manager = new MultiChainSwapManager(key);
-    const result = await manager.executeSwap(chainId, swapType, params);
+    const tempKey = process.env.REACT_APP_PRIVATE_KEY || '0x0000000000000000000000000000000000000000000000000000000000000001';
+    const service = new SwapService(tempKey, chainId);
+    const payload = await service.createSwapPayload(tokenInAddress, tokenOutAddress, amountInWei, slippagePercent || 5);
     
     res.json({
       success: true,
-      result
+      chainId,
+      network: config.name,
+      payload: {
+        ...payload,
+        swapParams: {
+          ...payload.swapParams,
+          amountIn: payload.swapParams.amountIn.toString(),
+          amountOutMinimum: payload.swapParams.amountOutMinimum.toString()
+        }
+      }
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    console.error('❌ Create-payload error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Get account info on a specific chain
+app.post('/api/swap/execute', async (req, res) => {
+  try {
+    const { chainId, swapType, params, privateKey } = req.body;
+    if (!chainId || !swapType || !params) {
+      return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+    
+    const key = privateKey || process.env.REACT_APP_PRIVATE_KEY;
+    if (!key) return res.status(400).json({ success: false, error: 'Private key required' });
+    
+    const manager = new MultiChainSwapManager(key);
+    const result = await manager.executeSwap(chainId, swapType, params);
+    res.json({ success: true, result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.get('/api/swap/account/:chainId/:address', async (req, res) => {
   try {
     const chainId = parseInt(req.params.chainId);
-    const address = req.params.address;
-    
     const config = NETWORK_CONFIGS[chainId];
-    if (!config) {
-      return res.status(404).json({
-        success: false,
-        error: `Chain ${chainId} not supported`
-      });
-    }
+    if (!config) return res.status(404).json({ success: false, error: `Chain ${chainId} not supported` });
     
-    // Create a read-only provider
-    const { ethers } = require('ethers');
     const provider = new ethers.JsonRpcProvider(config.rpcUrl);
-    
-    const balance = await provider.getBalance(address);
+    const balance = await provider.getBalance(req.params.address);
     const blockNumber = await provider.getBlockNumber();
     
     res.json({
       success: true,
       account: {
-        address,
+        address: req.params.address,
         balance: ethers.formatEther(balance),
         balanceWei: balance.toString(),
         network: config.name,
@@ -874,20 +546,14 @@ app.get('/api/swap/account/:chainId/:address', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Start server
+
 app.listen(PORT, () => {
-  console.log(`\n🚀 Transaction History API Server running on port ${PORT}`);
-  console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`📍 Get transactions: http://localhost:${PORT}/api/transactions/:address?mode=mainnet`);
-  console.log(`📍                    http://localhost:${PORT}/api/transactions/:address?mode=testnet`);
-  console.log(`📍 Swap chains: http://localhost:${PORT}/api/swap/chains`);
-  console.log(`📍 Swap tokens: http://localhost:${PORT}/api/swap/tokens/:chainId`);
-  console.log(`📍 Swap DEXes: http://localhost:${PORT}/api/swap/dexes/:chainId\n`);
+  console.log(`\n🚀 Server running on port ${PORT}`);
+  console.log(`📍 Health: http://localhost:${PORT}/api/health`);
+  console.log(`📍 Transactions: /api/transactions/:address?mode=mainnet|testnet`);
+  console.log(`📍 Swap: /api/swap/chains, /tokens/:chainId, /dexes/:chainId\n`);
 });
