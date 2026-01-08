@@ -550,6 +550,45 @@ app.get('/api/swap/account/:chainId/:address', async (req, res) => {
   }
 });
 
+app.post('/api/swap/token-balance', async (req, res) => {
+  try {
+    const { chainId, tokenAddress, userAddress } = req.body;
+    if (!chainId || !tokenAddress || !userAddress) {
+      return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+    
+    const config = NETWORK_CONFIGS[chainId];
+    if (!config) return res.status(404).json({ success: false, error: `Chain ${chainId} not supported` });
+    
+    const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+    const tokenContract = new ethers.Contract(tokenAddress, [
+      'function balanceOf(address owner) view returns (uint256)',
+      'function decimals() view returns (uint8)',
+      'function symbol() view returns (string)'
+    ], provider);
+    
+    const [balance, decimals, symbol] = await Promise.all([
+      tokenContract.balanceOf(userAddress),
+      tokenContract.decimals(),
+      tokenContract.symbol()
+    ]);
+    
+    res.json({
+      success: true,
+      tokenAddress,
+      userAddress,
+      balance: ethers.formatUnits(balance, decimals),
+      balanceRaw: balance.toString(),
+      decimals,
+      symbol,
+      chainId,
+      network: config.name
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 
 app.listen(PORT, () => {
   console.log(`\n🚀 Server running on port ${PORT}`);

@@ -144,6 +144,7 @@ const Swap = () => {
   const [selectedFeeTier, setSelectedFeeTier] = useState<number>(3000);
   const [gasEstimate, setGasEstimate] = useState<string>('0');
   const [showDetails, setShowDetails] = useState(false);
+  const [balanceRefreshTrigger, setBalanceRefreshTrigger] = useState<number>(0);
 
   // Fetch chains
   useEffect(() => {
@@ -168,6 +169,85 @@ const Swap = () => {
     };
     fetchChains();
   }, [networkMode, walletChainId, toast]);
+
+  // Auto-switch network when selected chain changes
+  useEffect(() => {
+    const switchNetwork = async () => {
+      if (!selectedChain || !window.ethereum || !isConnected) return;
+      
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const network = await provider.getNetwork();
+        const currentChainId = Number(network.chainId);
+        
+        // If already on the correct network, just fetch balance
+        if (currentChainId === selectedChain.chainId) {
+          return;
+        }
+        
+        // Attempt to switch network
+        try {
+          await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: `0x${selectedChain.chainId.toString(16)}` }],
+          });
+          
+          toast({ 
+            title: 'Network Switched', 
+            description: `Switched to ${selectedChain.name}` 
+          });
+          
+        } catch (switchError: any) {
+          // If network doesn't exist in wallet, add it
+          if (switchError.code === 4902) {
+            try {
+              await window.ethereum.request({
+                method: 'wallet_addEthereumChain',
+                params: [{
+                  chainId: `0x${selectedChain.chainId.toString(16)}`,
+                  chainName: selectedChain.name,
+                  nativeCurrency: { 
+                    name: selectedChain.symbol, 
+                    symbol: selectedChain.symbol, 
+                    decimals: 18 
+                  },
+                  rpcUrls: [RPC_URLS[selectedChain.chainId]],
+                  blockExplorerUrls: [selectedChain.explorer]
+                }],
+              });
+              
+              toast({ 
+                title: 'Network Added', 
+                description: `Added and switched to ${selectedChain.name}` 
+              });
+              
+            } catch (addError) {
+              console.error('Failed to add network:', addError);
+              toast({ 
+                title: 'Network Switch Failed', 
+                description: 'Could not add the network to your wallet', 
+                variant: 'destructive' 
+              });
+            }
+          } else if (switchError.code === 4001) {
+            // User rejected the request
+            console.log('User rejected network switch');
+          } else {
+            console.error('Failed to switch network:', switchError);
+            toast({ 
+              title: 'Network Switch Failed', 
+              description: 'Could not switch to the selected network', 
+              variant: 'destructive' 
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Network switch error:', error);
+      }
+    };
+    
+    switchNetwork();
+  }, [selectedChain, isConnected, toast]);
 
   // Fetch tokens
   useEffect(() => {
@@ -199,31 +279,98 @@ const Swap = () => {
     fetchTokens();
   }, [selectedChain]);
 
-  // Fetch balance
+  // Fetch balance for from token
   useEffect(() => {
     const fetchBalance = async () => {
-      if (!selectedChain || !address || !window.ethereum) return;
+      if (!selectedChain || !address || !fromToken) {
+        setBalance('0');
+        return;
+      }
       
       try {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const network = await provider.getNetwork();
+        const fromTokenData = tokens[fromToken];
         
-        if (Number(network.chainId) === selectedChain.chainId) {
-          const balanceWei = await provider.getBalance(address);
-          setBalance(parseFloat(ethers.formatEther(balanceWei)).toFixed(6));
+        if (!fromTokenData) {
+          setBalance('0');
+          return;
+        }
+
+        // For native token
+        if (fromToken === 'native') {
+          try {
+            // First try to get balance from connected wallet if on same network
+            if (window.ethereum) {
+              const provider = new ethers.BrowserProvider(window.ethereum);
+              const network = await provider.getNetwork();
+              
+              if (Number(network.chainId) === selectedChain.chainId) {
+                // On correct network, fetch directly
+                const balanceWei = await provider.getBalance(address);
+                setBalance(parseFloat(ethers.formatEther(balanceWei)).toFixed(6));
+                return;
+              }
+            }
+            
+            // Fallback to API for cross-chain balance
+            const response = await fetch(`${API_BASE_URL}/api/swap/account/${selectedChain.chainId}/${address}`);
+            const data = await response.json();
+            if (data.success) {
+              setBalance(parseFloat(data.account.balance).toFixed(6));
+            } else {
+              setBalance('0');
+            }
+          } catch (error) {
+            console.error('Failed to fetch native balance:', error);
+            setBalance('0');
+          }
         } else {
-          const response = await fetch(`${API_BASE_URL}/api/swap/account/${selectedChain.chainId}/${address}`);
-          const data = await response.json();
-          if (data.success) {
-            setBalance(parseFloat(data.account.balance).toFixed(6));
+          // For ERC20 tokens
+          try {
+            // Try direct query if on same network
+            if (window.ethereum) {
+              const provider = new ethers.BrowserProvider(window.ethereum);
+              const network = await provider.getNetwork();
+              
+              if (Number(network.chainId) === selectedChain.chainId) {
+                const tokenContract = new ethers.Contract(fromTokenData.address, ERC20_ABI, provider);
+                const tokenBalance = await tokenContract.balanceOf(address);
+                const decimals = fromTokenData.decimals || 18;
+                setBalance(parseFloat(ethers.formatUnits(tokenBalance, decimals)).toFixed(6));
+                return;
+              }
+            }
+            
+            // Fallback to API for cross-chain token balance
+            const response = await fetch(`${API_BASE_URL}/api/swap/token-balance`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chainId: selectedChain.chainId,
+                tokenAddress: fromTokenData.address,
+                userAddress: address
+              })
+            });
+            const data = await response.json();
+            if (data.success) {
+              setBalance(parseFloat(data.balance).toFixed(6));
+            } else {
+              setBalance('0');
+            }
+          } catch (error) {
+            console.error('Failed to fetch token balance:', error);
+            setBalance('0');
           }
         }
       } catch (error) {
         console.error('Failed to fetch balance:', error);
+        setBalance('0');
       }
     };
-    fetchBalance();
-  }, [selectedChain, address]);
+    
+    // Debounce balance fetching to avoid too many requests
+    const timeoutId = setTimeout(fetchBalance, 300);
+    return () => clearTimeout(timeoutId);
+  }, [selectedChain, address, fromToken, tokens, balanceRefreshTrigger]);
 
   // Fetch real quote from backend with detailed pool information
   useEffect(() => {
@@ -352,6 +499,61 @@ const Swap = () => {
 
     if (!selectedChain || !window.ethereum) {
       toast({ title: 'Error', description: 'No chain selected or wallet not found', variant: 'destructive' });
+      return;
+    }
+
+    // Validate balance before attempting swap
+    const fromTokenData = tokens[fromToken];
+    if (!fromTokenData) {
+      toast({ title: 'Error', description: 'Invalid token selection', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const userAddress = address || await (await provider.getSigner()).getAddress();
+      const amountValue = parseFloat(amount);
+
+      // Check balance based on token type
+      let hasBalance = false;
+      let tokenSymbol = fromTokenData.symbol;
+      let availableBalance = '0';
+
+      if (fromToken === 'native') {
+        const balanceWei = await provider.getBalance(userAddress);
+        const balanceEth = parseFloat(ethers.formatEther(balanceWei));
+        availableBalance = balanceEth.toFixed(6);
+        // Account for gas fees (estimate ~0.01 for buffer)
+        hasBalance = balanceEth >= amountValue + 0.01;
+        if (!hasBalance) {
+          toast({
+            title: 'Insufficient Balance',
+            description: `You need ${amountValue.toFixed(6)} ${tokenSymbol} but only have ${availableBalance} ${tokenSymbol}. Reserve some for gas fees.`,
+            variant: 'destructive'
+          });
+          return;
+        }
+      } else {
+        // ERC20 token balance check
+        const tokenContract = new ethers.Contract(fromTokenData.address, ERC20_ABI, provider);
+        const tokenBalance = await tokenContract.balanceOf(userAddress);
+        const decimals = fromTokenData.decimals || 18;
+        const balanceFormatted = parseFloat(ethers.formatUnits(tokenBalance, decimals));
+        availableBalance = balanceFormatted.toFixed(6);
+        hasBalance = balanceFormatted >= amountValue;
+        
+        if (!hasBalance) {
+          toast({
+            title: 'Insufficient Token Balance',
+            description: `You need ${amountValue.toFixed(6)} ${tokenSymbol} but only have ${availableBalance} ${tokenSymbol}`,
+            variant: 'destructive'
+          });
+          return;
+        }
+      }
+    } catch (error) {
+      console.error('Balance check error:', error);
+      toast({ title: 'Error', description: 'Failed to check balance', variant: 'destructive' });
       return;
     }
 
@@ -518,25 +720,72 @@ const Swap = () => {
       setTxHash(tx.hash);
       const receipt = await tx.wait();
       
-      toast({ title: 'Swap Successful! 🎉', description: `Confirmed in block ${receipt.blockNumber}` });
+      // Wait a moment for balance to update on-chain
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // Trigger balance refresh by updating the trigger state
+      setBalanceRefreshTrigger(prev => prev + 1);
+      
+      // Fetch updated balances for both tokens to show in success message
+      let fromBalance = '0';
+      let toBalance = '0';
+      
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        
+        // Get new balance of fromToken
+        if (fromToken === 'native') {
+          const balanceWei = await provider.getBalance(userAddress);
+          fromBalance = parseFloat(ethers.formatEther(balanceWei)).toFixed(4);
+        } else {
+          const tokenContract = new ethers.Contract(fromTokenData.address, ERC20_ABI, provider);
+          const tokenBalance = await tokenContract.balanceOf(userAddress);
+          fromBalance = parseFloat(ethers.formatUnits(tokenBalance, fromDecimals)).toFixed(4);
+        }
+        
+        // Get new balance of toToken
+        if (toToken === 'native') {
+          const balanceWei = await provider.getBalance(userAddress);
+          toBalance = parseFloat(ethers.formatEther(balanceWei)).toFixed(4);
+        } else {
+          const toDecimals = toTokenData.decimals || 18;
+          const tokenContract = new ethers.Contract(toTokenData.address, ERC20_ABI, provider);
+          const tokenBalance = await tokenContract.balanceOf(userAddress);
+          toBalance = parseFloat(ethers.formatUnits(tokenBalance, toDecimals)).toFixed(4);
+        }
+      } catch (balanceError) {
+        console.error('Failed to fetch updated balances:', balanceError);
+      }
+      
+      toast({ 
+        title: 'Swap Successful! 🎉', 
+        description: `Confirmed in block ${receipt.blockNumber}. New balances: ${fromBalance} ${fromTokenData.symbol} | ${toBalance} ${toTokenData.symbol}` 
+      });
       setAmount('');
 
     } catch (error: any) {
       console.error('Swap error:', error);
       
       let errorMessage = 'An error occurred during the swap';
+      let errorTitle = 'Swap Failed';
       
       if (error.code === 'ACTION_REJECTED' || error.code === 4001) {
         errorMessage = 'Transaction was rejected by user';
       } else if (error.code === 'INSUFFICIENT_FUNDS') {
-        errorMessage = 'Insufficient funds for transaction';
+        errorTitle = 'Insufficient Funds';
+        errorMessage = 'Not enough balance to cover transaction and gas fees';
+      } else if (error.message?.includes('Insufficient') && error.message?.includes('balance')) {
+        errorTitle = 'Insufficient Balance';
+        errorMessage = error.message;
       } else if (error.message?.includes('execution reverted')) {
-        errorMessage = 'Swap failed. The pool may not exist for this token pair.';
+        errorMessage = 'Swap failed. The pool may not exist for this token pair or insufficient liquidity.';
+      } else if (error.message?.includes('user rejected')) {
+        errorMessage = 'Transaction was rejected by user';
       } else if (error.message) {
-        errorMessage = error.message.substring(0, 150);
+        errorMessage = error.message.substring(0, 200);
       }
 
-      toast({ title: 'Swap Failed', description: errorMessage, variant: 'destructive' });
+      toast({ title: errorTitle, description: errorMessage, variant: 'destructive' });
     } finally {
       setIsSwapping(false);
     }
@@ -617,7 +866,16 @@ const Swap = () => {
                 value={selectedChain?.chainId.toString() || ''} 
                 onValueChange={(value) => {
                   const chain = chains.find(c => c.chainId.toString() === value);
-                  setSelectedChain(chain || null);
+                  if (chain) {
+                    setSelectedChain(chain);
+                    // Reset quote and errors when changing network
+                    setEstimatedOutput('0.0');
+                    setQuoteError(null);
+                    setPoolDetails([]);
+                    setAllQuotes([]);
+                    setGasEstimate('0');
+                    setTxHash(null);
+                  }
                 }}
               >
                 <SelectTrigger className="glass-card">
@@ -667,6 +925,7 @@ const Swap = () => {
                     size="sm"
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-xs"
                     onClick={() => setAmount(balance)}
+                    disabled={!balance || balance === '0'}
                   >
                     MAX
                   </Button>

@@ -202,6 +202,29 @@ class SwapService {
     throw new Error(data.error || 'Failed to create swap payload');
   }
 
+  // Get token balance for a specific user
+  async getTokenBalance(
+    chainId: number,
+    tokenAddress: string,
+    userAddress: string
+  ): Promise<{ balance: string; decimals: number; symbol: string }> {
+    const response = await fetch(`${this.baseUrl}/api/swap/token-balance`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chainId, tokenAddress, userAddress })
+    });
+    const data = await response.json();
+    
+    if (data.success) {
+      return {
+        balance: data.balance,
+        decimals: data.decimals,
+        symbol: data.symbol
+      };
+    }
+    throw new Error(data.error || 'Failed to fetch token balance');
+  }
+
   formatBalance(balance: string, decimals: number = 6): string {
     const num = parseFloat(balance);
     if (isNaN(num)) return '0';

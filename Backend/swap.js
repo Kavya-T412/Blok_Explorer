@@ -153,9 +153,16 @@ class SwapService {
     const wrappedContract = this.getWrappedNativeContract();
     const amountWei = ethers.parseEther(amount.toString());
     
+    // Balance validation with detailed error message
     const balance = await this.provider.getBalance(this.account);
     if (balance < amountWei) {
-      throw new Error(`Insufficient ${this.networkConfig.symbol} balance`);
+      const balanceFormatted = ethers.formatEther(balance);
+      const requiredFormatted = ethers.formatEther(amountWei);
+      throw new Error(
+        `Insufficient ${this.networkConfig.symbol} balance for wrapping. ` +
+        `Required: ${requiredFormatted} ${this.networkConfig.symbol}, ` +
+        `Available: ${balanceFormatted} ${this.networkConfig.symbol}`
+      );
     }
     
     const tx = await wrappedContract.deposit({ value: amountWei });
@@ -175,8 +182,9 @@ class SwapService {
     const wrappedContract = this.getWrappedNativeContract();
     const wrappedBalance = await wrappedContract.balanceOf(this.account);
     
+    // Balance validation with detailed error message
     if (wrappedBalance === 0n) {
-      throw new Error('No wrapped balance to unwrap');
+      throw new Error(`No W${this.networkConfig.symbol} balance available to unwrap`);
     }
     
     const amountToUnwrap = amount 
@@ -440,9 +448,16 @@ class SwapService {
     const amountInWei = ethers.parseEther(amountIn.toString());
     const wrappedNative = WRAPPED_NATIVE[this.chainId];
     
+    // Balance validation with detailed error message
     const balance = await this.provider.getBalance(this.account);
     if (balance < amountInWei) {
-      throw new Error(`Insufficient ${this.networkConfig.symbol} balance`);
+      const balanceFormatted = ethers.formatEther(balance);
+      const requiredFormatted = ethers.formatEther(amountInWei);
+      throw new Error(
+        `Insufficient ${this.networkConfig.symbol} balance. ` +
+        `Required: ${requiredFormatted} ${this.networkConfig.symbol}, ` +
+        `Available: ${balanceFormatted} ${this.networkConfig.symbol}`
+      );
     }
     
     const { fee, quote } = await this.fetchQuote(wrappedNative, tokenOut, amountInWei);
@@ -481,12 +496,20 @@ class SwapService {
     
     const token = this.getTokenContract(tokenIn);
     const decimals = await token.decimals();
+    const symbol = await token.symbol();
     const amountInWei = ethers.parseUnits(amountIn.toString(), decimals);
     const wrappedNative = WRAPPED_NATIVE[this.chainId];
     
+    // Balance validation with detailed error message
     const tokenBalance = await token.balanceOf(this.account);
     if (tokenBalance < amountInWei) {
-      throw new Error('Insufficient token balance');
+      const balanceFormatted = ethers.formatUnits(tokenBalance, decimals);
+      const requiredFormatted = ethers.formatUnits(amountInWei, decimals);
+      throw new Error(
+        `Insufficient ${symbol} balance. ` +
+        `Required: ${requiredFormatted} ${symbol}, ` +
+        `Available: ${balanceFormatted} ${symbol}`
+      );
     }
     
     await this.approveToken(tokenIn, this.routerAddress, amountInWei);
@@ -529,11 +552,19 @@ class SwapService {
     
     const tokenInContract = this.getTokenContract(tokenIn);
     const decimalsIn = await tokenInContract.decimals();
+    const symbolIn = await tokenInContract.symbol();
     const amountInWei = ethers.parseUnits(amountIn.toString(), decimalsIn);
     
+    // Balance validation with detailed error message
     const tokenBalance = await tokenInContract.balanceOf(this.account);
     if (tokenBalance < amountInWei) {
-      throw new Error('Insufficient token balance');
+      const balanceFormatted = ethers.formatUnits(tokenBalance, decimalsIn);
+      const requiredFormatted = ethers.formatUnits(amountInWei, decimalsIn);
+      throw new Error(
+        `Insufficient ${symbolIn} balance. ` +
+        `Required: ${requiredFormatted} ${symbolIn}, ` +
+        `Available: ${balanceFormatted} ${symbolIn}`
+      );
     }
     
     await this.approveToken(tokenIn, this.routerAddress, amountInWei);
