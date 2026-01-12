@@ -1,80 +1,133 @@
-// Replace with your own API keys for each explorer
-const ETHERSCAN_API_KEY = "YOUR_ETHERSCAN_API_KEY";
-const POLYGONSCAN_API_KEY = "YOUR_POLYGONSCAN_API_KEY";
-const BSCSCAN_API_KEY = "YOUR_BSCSCAN_API_KEY";
+const fetch = require('node-fetch');
 
-// Gas limit for a simple transfer (ETH, Polygon, BSC)
-const GAS_LIMIT = 21000;
+// Store for historical gas prices (last 24 hours)
+const gasHistory = {
+  ethereum: [],
+  bsc: [],
+  polygon: [],
+  arbitrum: [],
+  optimism: [],
+  base: []
+};
 
-// Helper: calculate fee in native token
-function calculateFee(gasPriceGwei, gasLimit) {
-  return (gasPriceGwei * gasLimit) / 1e9; // Convert Gwei → ETH/MATIC/BNB
-}
+const MAX_HISTORY_POINTS = 48; // Store 48 data points (one every 30 minutes for 24 hours)
 
-// ---------------- Ethereum ----------------
-async function getEthereumGas() {
-  const url = `https://api.etherscan.io/api?module=gastracker&action=gasoracle&apikey=${ETHERSCAN_API_KEY}`;
-  const response = await fetch(url);
-  const data = await response.json();
-  const { SafeGasPrice, ProposeGasPrice, FastGasPrice } = data.result;
+const chains = [
+  { id: 1, name: 'ethereum', label: 'Ethereum' },
+  { id: 56, name: 'bsc', label: 'Binance Smart Chain' },
+  { id: 137, name: 'polygon', label: 'Polygon' },
+  { id: 42161, name: 'arbitrum', label: 'Arbitrum' },
+  { id: 10, name: 'optimism', label: 'Optimism' },
+  { id: 8453, name: 'base', label: 'Base' }
+];
 
-  console.log("Ethereum Gas Fees:");
-  console.log("Low:", calculateFee(parseInt(SafeGasPrice), GAS_LIMIT), "ETH");
-  console.log("Average:", calculateFee(parseInt(ProposeGasPrice), GAS_LIMIT), "ETH");
-  console.log("High:", calculateFee(parseInt(FastGasPrice), GAS_LIMIT), "ETH");
-}
+const apiKey = "3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K";
 
-// ---------------- Polygon ----------------
-async function getPolygonGas() {
-  const url = `https://api.polygonscan.com/api?module=gastracker&action=gasoracle&apikey=${POLYGONSCAN_API_KEY}`;
-  const response = await fetch(url);
-  const data = await response.json();
-  const { SafeGasPrice, ProposeGasPrice, FastGasPrice } = data.result;
-
-  console.log("\nPolygon Gas Fees:");
-  console.log("Low:", calculateFee(parseInt(SafeGasPrice), GAS_LIMIT), "MATIC");
-  console.log("Average:", calculateFee(parseInt(ProposeGasPrice), GAS_LIMIT), "MATIC");
-  console.log("High:", calculateFee(parseInt(FastGasPrice), GAS_LIMIT), "MATIC");
-}
-
-// ---------------- Binance Smart Chain ----------------
-async function getBscGas() {
-  const url = `https://api.bscscan.com/api?module=gastracker&action=gasoracle&apikey=${BSCSCAN_API_KEY}`;
-  const response = await fetch(url);
-  const data = await response.json();
-  const { SafeGasPrice, ProposeGasPrice, FastGasPrice } = data.result;
-
-  console.log("\nBinance Smart Chain Gas Fees:");
-  console.log("Low:", calculateFee(parseInt(SafeGasPrice), GAS_LIMIT), "BNB");
-  console.log("Average:", calculateFee(parseInt(ProposeGasPrice), GAS_LIMIT), "BNB");
-  console.log("High:", calculateFee(parseInt(FastGasPrice), GAS_LIMIT), "BNB");
-}
-
-// ---------------- Solana ----------------
-async function getSolanaFee() {
-  const url = "https://api.mainnet-beta.solana.com";
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "getRecentBlockhash"
-    })
+// Initialize history with mock data for the past 24 hours
+function initializeHistory() {
+  const now = Date.now();
+  const thirtyMinutes = 30 * 60 * 1000;
+  
+  chains.forEach(chain => {
+    if (gasHistory[chain.name].length === 0) {
+      // Generate initial historical data (simulated for immediate display)
+      for (let i = MAX_HISTORY_POINTS - 1; i >= 0; i--) {
+        const timestamp = now - (i * thirtyMinutes);
+        const baseValue = chain.id === 1 ? 0.035 : chain.id === 137 ? 140 : 5;
+        const variance = Math.random() * 0.3 - 0.15; // ±15% variance
+        
+        gasHistory[chain.name].push({
+          timestamp,
+          slow: baseValue * (0.9 + variance),
+          standard: baseValue * (1.0 + variance),
+          fast: baseValue * (1.15 + variance),
+          suggestBaseFee: baseValue * (0.85 + variance)
+        });
+      }
+    }
   });
-  const data = await response.json();
-  const lamportsPerSignature = data.result.value.feeCalculator.lamportsPerSignature;
-
-  console.log("\nSolana Fee:");
-  console.log("Flat Fee:", lamportsPerSignature / 1e9, "SOL");
 }
 
-// ---------------- Run All ----------------
-async function runAll() {
-  await getEthereumGas();
-  await getPolygonGas();
-  await getBscGas();
-  await getSolanaFee();
+// Add new data point to history
+function addToHistory(chainName, gasData) {
+  if (!gasHistory[chainName]) {
+    gasHistory[chainName] = [];
+  }
+  
+  gasHistory[chainName].push({
+    timestamp: gasData.timestamp,
+    slow: gasData.slow,
+    standard: gasData.standard,
+    fast: gasData.fast,
+    suggestBaseFee: gasData.suggestBaseFee
+  });
+  
+  // Keep only last MAX_HISTORY_POINTS
+  if (gasHistory[chainName].length > MAX_HISTORY_POINTS) {
+    gasHistory[chainName].shift();
+  }
 }
 
-runAll();
+async function getGasPrices() {
+  const results = {};
+  
+  for (const chain of chains) {
+    try {
+      const url = `https://api.etherscan.io/v2/api?chainid=${chain.id}&module=gastracker&action=gasoracle&apikey=${apiKey}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      
+      if (data.status === '1' && data.result) {
+        const gasData = {
+          chainId: chain.id,
+          chainName: chain.label,
+          slow: parseFloat(data.result.SafeGasPrice) || 0,
+          standard: parseFloat(data.result.ProposeGasPrice) || 0,
+          fast: parseFloat(data.result.FastGasPrice) || 0,
+          suggestBaseFee: parseFloat(data.result.suggestBaseFee) || 0,
+          timestamp: Date.now()
+        };
+        
+        // Add to history
+        addToHistory(chain.name, gasData);
+        
+        // Add history to results
+        gasData.history = gasHistory[chain.name];
+        results[chain.name] = gasData;
+      } else {
+        // Fallback data if API fails
+        results[chain.name] = {
+          chainId: chain.id,
+          chainName: chain.label,
+          slow: 0,
+          standard: 0,
+          fast: 0,
+          suggestBaseFee: 0,
+          timestamp: Date.now(),
+          history: gasHistory[chain.name] || [],
+          error: 'Failed to fetch gas prices'
+        };
+      }
+    } catch (error) {
+      console.error(`Error fetching gas for ${chain.label}:`, error.message);
+      results[chain.name] = {
+        chainId: chain.id,
+        chainName: chain.label,
+        slow: 0,
+        standard: 0,
+        fast: 0,
+        suggestBaseFee: 0,
+        timestamp: Date.now(),
+        history: gasHistory[chain.name] || [],
+        error: error.message
+      };
+    }
+  }
+  
+  return results;
+}
+
+// Initialize history on module load
+initializeHistory();
+
+module.exports = { getGasPrices, chains };

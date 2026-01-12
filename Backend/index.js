@@ -4,6 +4,7 @@ const fetch = require('node-fetch');
 const { ethers } = require('ethers');
 const { NETWORK_CONFIGS, WRAPPED_NATIVE, STABLECOINS, DEX_ROUTERS, UNISWAP_V3_QUOTER } = require('./networkconfig');
 const { SwapService, MultiChainSwapManager } = require('./swap');
+const { getGasPrices, chains } = require('./gasEstimate');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -213,6 +214,25 @@ async function getTransactionHistory(walletAddress, networkMode = 'mainnet') {
 // API Routes
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Transaction History API is running' });
+});
+
+// Gas Estimation Endpoint
+app.get('/api/gas-prices', async (req, res) => {
+  try {
+    const gasPrices = await getGasPrices();
+    res.json({ 
+      success: true, 
+      data: gasPrices,
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error('Error fetching gas prices:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch gas prices',
+      message: error.message 
+    });
+  }
 });
 
 app.get('/api/transactions/:address', async (req, res) => {
