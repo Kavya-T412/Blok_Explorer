@@ -1,4 +1,5 @@
 const fetch = require('node-fetch');
+const { bscFetcher } = require('./bscGasFetcher');
 
 // Store for historical gas prices (last 24 hours)
 const gasHistory = {
@@ -14,7 +15,7 @@ const MAX_HISTORY_POINTS = 48; // Store 48 data points (one every 30 minutes for
 
 const chains = [
   { id: 1, name: 'ethereum', label: 'Ethereum' },
-  { id: 56, name: 'bsc', label: 'Binance Smart Chain' },
+  { id: 56, name: 'bsc', label: 'Binance Smart Chain', useEthersRpc: true },
   { id: 137, name: 'polygon', label: 'Polygon' },
   { id: 42161, name: 'arbitrum', label: 'Arbitrum' },
   { id: 10, name: 'optimism', label: 'Optimism' },
@@ -27,7 +28,7 @@ const apiKey = "3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K";
 function initializeHistory() {
   const now = Date.now();
   const thirtyMinutes = 30 * 60 * 1000;
-  
+
   chains.forEach(chain => {
     if (gasHistory[chain.name].length === 0) {
       // Generate initial historical data (simulated for immediate display)
@@ -35,7 +36,7 @@ function initializeHistory() {
         const timestamp = now - (i * thirtyMinutes);
         const baseValue = chain.id === 1 ? 0.035 : chain.id === 137 ? 140 : 5;
         const variance = Math.random() * 0.3 - 0.15; // ±15% variance
-        
+
         gasHistory[chain.name].push({
           timestamp,
           slow: baseValue * (0.9 + variance),
@@ -53,7 +54,7 @@ function addToHistory(chainName, gasData) {
   if (!gasHistory[chainName]) {
     gasHistory[chainName] = [];
   }
-  
+
   gasHistory[chainName].push({
     timestamp: gasData.timestamp,
     slow: gasData.slow,
@@ -61,7 +62,7 @@ function addToHistory(chainName, gasData) {
     fast: gasData.fast,
     suggestBaseFee: gasData.suggestBaseFee
   });
-  
+
   // Keep only last MAX_HISTORY_POINTS
   if (gasHistory[chainName].length > MAX_HISTORY_POINTS) {
     gasHistory[chainName].shift();
@@ -70,44 +71,61 @@ function addToHistory(chainName, gasData) {
 
 async function getGasPrices() {
   const results = {};
-  
+
   for (const chain of chains) {
     try {
-      const url = `https://api.etherscan.io/v2/api?chainid=${chain.id}&module=gastracker&action=gasoracle&apikey=${apiKey}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      
-      if (data.status === '1' && data.result) {
-        const gasData = {
-          chainId: chain.id,
-          chainName: chain.label,
-          slow: parseFloat(data.result.SafeGasPrice) || 0,
-          standard: parseFloat(data.result.ProposeGasPrice) || 0,
-          fast: parseFloat(data.result.FastGasPrice) || 0,
-          suggestBaseFee: parseFloat(data.result.suggestBaseFee) || 0,
-          timestamp: Date.now()
+      let gasData;
+
+      // Use ethers.js RPC for BSC (legacy gas model)
+      if (chain.useEthersRpc && chain.name === 'bsc') {
+        const bscData = await bscFetcher.getGasPrices();
+
+        if (bscData.error) {
+          throw new Error(bscData.error);
+        }
+
+        gasData = {
+          chainId: bscData.chainId,
+          chainName: bscData.chainName,
+          slow: bscData.slow,
+          standard: bscData.standard,
+          fast: bscData.fast,
+          suggestBaseFee: bscData.suggestBaseFee,
+          timestamp: bscData.timestamp,
+          blockNumber: bscData.blockNumber,
+          unit: bscData.unit,
+          rpcSource: 'ethers.js JsonRpcProvider (Ankr)'
         };
-        
-        // Add to history
-        addToHistory(chain.name, gasData);
-        
-        // Add history to results
-        gasData.history = gasHistory[chain.name];
-        results[chain.name] = gasData;
+
+        console.log(`✅ BSC gas fetched via ethers.js: ${gasData.standard} Gwei`);
       } else {
-        // Fallback data if API fails
-        results[chain.name] = {
-          chainId: chain.id,
-          chainName: chain.label,
-          slow: 0,
-          standard: 0,
-          fast: 0,
-          suggestBaseFee: 0,
-          timestamp: Date.now(),
-          history: gasHistory[chain.name] || [],
-          error: 'Failed to fetch gas prices'
-        };
+        // Use Etherscan API for other chains
+        const url = `https://api.etherscan.io/v2/api?chainid=${chain.id}&module=gastracker&action=gasoracle&apikey=${apiKey}`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.status === '1' && data.result) {
+          gasData = {
+            chainId: chain.id,
+            chainName: chain.label,
+            slow: parseFloat(data.result.SafeGasPrice) || 0,
+            standard: parseFloat(data.result.ProposeGasPrice) || 0,
+            fast: parseFloat(data.result.FastGasPrice) || 0,
+            suggestBaseFee: parseFloat(data.result.suggestBaseFee) || 0,
+            timestamp: Date.now(),
+            rpcSource: 'Etherscan API'
+          };
+        } else {
+          throw new Error('No data from API');
+        }
       }
+
+      // Add to history
+      addToHistory(chain.name, gasData);
+
+      // Add history to results
+      gasData.history = gasHistory[chain.name];
+      results[chain.name] = gasData;
     } catch (error) {
       console.error(`Error fetching gas for ${chain.label}:`, error.message);
       results[chain.name] = {
@@ -123,7 +141,7 @@ async function getGasPrices() {
       };
     }
   }
-  
+
   return results;
 }
 

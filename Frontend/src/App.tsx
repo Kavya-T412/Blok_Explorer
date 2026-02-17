@@ -15,6 +15,8 @@ import NotFound from "./pages/NotFound";
 import { WagmiProvider } from 'wagmi';
 import { wagmiAdapter } from './lib/reownAppKit';
 
+import { Chatbot } from "./components/Chatbot";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -36,6 +38,7 @@ const App = () => (
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
+            <Chatbot />
           </BrowserRouter>
         </TooltipProvider>
       </WalletProvider>

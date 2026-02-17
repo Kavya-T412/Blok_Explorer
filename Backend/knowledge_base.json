@@ -1,0 +1,37 @@
+[
+  {
+    "id": "intro",
+    "title": "What is Blockverse?",
+    "content": "Blockverse is a comprehensive multi-chain block explorer and decentralized finance (DeFi) dashboard. It allows users to track transaction history across multiple networks, estimate gas fees in real-time, and perform token swaps using integrated DEX routers like Uniswap V3."
+  },
+  {
+    "id": "supported_chains",
+    "title": "Supported Networks",
+    "content": "Blockverse supports multiple blockchain networks including Ethereum Mainnet, Polygon (Matic), Binance Smart Chain (BSC), Arbitrum, Optimism, Base, and Avalanche. It also supports various testnets like Sepolia, Amoy, BSC Testnet, Arbitrum Sepolia, Optimism Sepolia, Base Sepolia, and Fuji."
+  },
+  {
+    "id": "dashboard",
+    "title": "Dashboard Features",
+    "content": "The Dashboard provides a consolidated view of your wallet. You can see your native token balances, recent transaction history across all supported chains, and detailed metadata for each transaction including status, timestamp, and gas used."
+  },
+  {
+    "id": "gas_estimator",
+    "title": "Gas Estimator",
+    "content": "The Gas Estimator tool provides real-time gas price suggestions (Low, Average, High) for multiple chains. This helps you choose the best time to send transactions to save on fees."
+  },
+  {
+    "id": "token_swap",
+    "title": "Token Swapping",
+    "content": "You can swap tokens directly within Blockverse using the Swap page. It integrates with major DEXs (Decentralized Exchanges) like Uniswap V3. You can select your source token, destination token, and the amount to swap. The app will fetch quotes and highlight the best available price."
+  },
+  {
+    "id": "wallet_connection",
+    "title": "Connecting Your Wallet",
+    "content": "To use Blockverse features like swapping or viewing history, you need to connect your Web3 wallet (e.g., MetaMask, WalletConnect). Look for the 'Connect Wallet' button on the landing page or the top navigation bar."
+  },
+  {
+    "id": "transaction_history",
+    "title": "Viewing Transaction History",
+    "content": "In the Dashboard, enter your wallet address to see a merged list of your transactions from all supported networks. You can filter by Mainnet or Testnet modes to see different activity sets."
+  }
+]

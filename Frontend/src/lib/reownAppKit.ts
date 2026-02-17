@@ -1,14 +1,14 @@
 import { createAppKit } from '@reown/appkit'
-import { 
-  mainnet, 
-  arbitrum, 
-  polygon, 
-  bsc, 
+import {
+  mainnet,
+  arbitrum,
+  polygon,
+  bsc,
   optimism,
   base,
   avalanche,
-  sepolia, 
-  polygonAmoy, 
+  sepolia,
+  polygonAmoy,
   bscTestnet,
   arbitrumSepolia,
   optimismSepolia,
@@ -20,16 +20,16 @@ import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
 import type { AppKitNetwork } from '@reown/appkit/networks'
 
 // 1. Get a project ID at https://dashboard.reown.com
-const projectId = '6e8cdec996f31d6e5a7c3a2fd8a95189'
+const projectId = import.meta.env.VITE_REOWN_PROJECT_ID || '6e8cdec996f31d6e5a7c3a2fd8a95189'
 
 // Environment variable to switch between mainnet and testnet
 const USE_TESTNET = import.meta.env.VITE_USE_TESTNET === 'true' || false;
 
 // Define all mainnet networks
 export const mainnetNetworks: [AppKitNetwork, ...AppKitNetwork[]] = [
-  mainnet, 
-  polygon, 
-  bsc, 
+  mainnet,
+  polygon,
+  bsc,
   arbitrum,
   optimism,
   base,
@@ -40,7 +40,7 @@ export const mainnetNetworks: [AppKitNetwork, ...AppKitNetwork[]] = [
 export const testnetNetworks: [AppKitNetwork, ...AppKitNetwork[]] = [
   sepolia,
   holesky,
-  polygonAmoy, 
+  polygonAmoy,
   bscTestnet,
   arbitrumSepolia,
   optimismSepolia,

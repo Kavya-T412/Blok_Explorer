@@ -5,12 +5,14 @@ const { ethers } = require('ethers');
 const { NETWORK_CONFIGS, WRAPPED_NATIVE, STABLECOINS, DEX_ROUTERS, UNISWAP_V3_QUOTER } = require('./networkconfig');
 const { SwapService, MultiChainSwapManager } = require('./swap');
 const { getGasPrices, chains } = require('./gasEstimate');
+const { generateAiResponse } = require('./ai_service');
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Add BigInt serialization support for JSON
-BigInt.prototype.toJSON = function() { return this.toString(); };
+BigInt.prototype.toJSON = function () { return this.toString(); };
 
 app.use(cors());
 app.use(express.json());
@@ -63,7 +65,7 @@ async function fetchTransactionReceiptsBatch(txHashes, rpcUrl, batchSize = 10) {
           params: [hash]
         })))
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         (Array.isArray(data) ? data : [data]).forEach((item, index) => {
@@ -98,7 +100,7 @@ async function fetchNetworkTransactions(walletAddress, network, rpcUrl, categori
     }]
   });
 
-  const timeout = new Promise((_, reject) => 
+  const timeout = new Promise((_, reject) =>
     setTimeout(() => reject(new Error('Request timeout')), 10000)
   );
 
@@ -190,14 +192,14 @@ async function getTransactionHistory(walletAddress, networkMode = 'mainnet') {
   console.log(`\n🔍 Fetching ${networkMode.toUpperCase()} transactions (${networks.length} chains in parallel)`);
 
   // Fetch from all networks in parallel for better performance
-  const networkPromises = networks.map(network => 
+  const networkPromises = networks.map(network =>
     fetchNetworkTransactions(walletAddress, network.name, network.url, network.categories)
       .catch(err => {
         console.error(`Failed to fetch from ${network.name}: ${err.message}`);
         return []; // Return empty array on error, don't fail entire request
       })
   );
-  
+
   const allNetworkResults = await Promise.all(networkPromises);
   const allTransactions = allNetworkResults.flat();
 
@@ -220,17 +222,17 @@ app.get('/api/health', (req, res) => {
 app.get('/api/gas-prices', async (req, res) => {
   try {
     const gasPrices = await getGasPrices();
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data: gasPrices,
       timestamp: Date.now()
     });
   } catch (error) {
     console.error('Error fetching gas prices:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       error: 'Failed to fetch gas prices',
-      message: error.message 
+      message: error.message
     });
   }
 });
@@ -239,8 +241,8 @@ app.get('/api/transactions/:address', async (req, res) => {
   try {
     // Set response timeout to 55 seconds (less than frontend timeout)
     req.setTimeout(55000);
-    
-    const networkMode = ['mainnet', 'testnet'].includes(req.query.mode?.toLowerCase()) 
+
+    const networkMode = ['mainnet', 'testnet'].includes(req.query.mode?.toLowerCase())
       ? req.query.mode.toLowerCase() : 'mainnet';
     const transactions = await getTransactionHistory(req.params.address, networkMode);
     res.json({
@@ -301,12 +303,12 @@ app.get('/api/swap/tokens/:chainId', (req, res) => {
     const chainId = parseInt(req.params.chainId);
     const config = NETWORK_CONFIGS[chainId];
     if (!config) return res.status(404).json({ success: false, error: `Chain ${chainId} not supported` });
-    
+
     const tokens = {
       native: { symbol: config.symbol, name: `${config.name} Native Token`, address: 'native', decimals: 18 },
       wrappedNative: { symbol: `W${config.symbol}`, name: `Wrapped ${config.symbol}`, address: WRAPPED_NATIVE[chainId], decimals: 18 }
     };
-    
+
     const stables = STABLECOINS[chainId];
     if (stables) {
       Object.entries(stables).forEach(([symbol, address]) => {
@@ -324,7 +326,7 @@ app.get('/api/swap/dexes/:chainId', (req, res) => {
     const chainId = parseInt(req.params.chainId);
     const config = NETWORK_CONFIGS[chainId];
     if (!config) return res.status(404).json({ success: false, error: `Chain ${chainId} not supported` });
-    
+
     const dexes = DEX_ROUTERS[chainId] || {};
     res.json({
       success: true,
@@ -344,7 +346,7 @@ app.post('/api/swap/quote', async (req, res) => {
     if (!chainId || tokenIn === undefined || tokenOut === undefined || !amountIn) {
       return res.status(400).json({ success: false, error: 'Missing required fields' });
     }
-    
+
     const config = NETWORK_CONFIGS[chainId];
     if (!config) return res.status(404).json({ success: false, error: `Chain ${chainId} not supported` });
 
@@ -362,7 +364,7 @@ app.post('/api/swap/quote', async (req, res) => {
 
     const provider = new ethers.JsonRpcProvider(config.rpcUrl);
     const quoter = new ethers.Contract(quoterAddress, ['function quoteExactInputSingle(tuple(address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96) params) external returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)'], provider);
-    
+
     const amountInWei = ethers.parseUnits(amountIn.toString(), fromDecimals || 18);
     let bestQuote = null, bestFee = 3000;
 
@@ -393,17 +395,17 @@ app.post('/api/swap/pool-details', async (req, res) => {
     if (!chainId || !tokenIn || !tokenOut) {
       return res.status(400).json({ success: false, error: 'Missing required fields' });
     }
-    
+
     const config = NETWORK_CONFIGS[chainId];
     if (!config) return res.status(404).json({ success: false, error: `Chain ${chainId} not supported` });
 
     const tokenInAddress = getTokenAddress(tokenIn, chainId);
     const tokenOutAddress = getTokenAddress(tokenOut, chainId);
-    
+
     const tempKey = process.env.REACT_APP_PRIVATE_KEY || '0x0000000000000000000000000000000000000000000000000000000000000001';
     const service = new SwapService(tempKey, chainId);
     const poolDetails = await service.getPoolDetails(tokenInAddress, tokenOutAddress);
-    
+
     // Convert all BigInt values to strings/numbers for JSON serialization
     const safePoolDetails = poolDetails.map(pool => ({
       ...pool,
@@ -412,7 +414,7 @@ app.post('/api/swap/pool-details', async (req, res) => {
       sqrtPriceX96: pool.sqrtPriceX96.toString(),
       liquidity: pool.liquidity.toString()
     }));
-    
+
     res.json({ success: true, chainId, network: config.name, tokenIn, tokenOut, pools: safePoolDetails });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -425,7 +427,7 @@ app.post('/api/swap/quote-detailed', async (req, res) => {
     if (!chainId || tokenIn === undefined || tokenOut === undefined || !amountIn) {
       return res.status(400).json({ success: false, error: 'Missing required fields' });
     }
-    
+
     const config = NETWORK_CONFIGS[chainId];
     if (!config) return res.status(404).json({ success: false, error: `Chain ${chainId} not supported` });
 
@@ -439,12 +441,12 @@ app.post('/api/swap/quote-detailed', async (req, res) => {
     const amountInWei = ethers.parseUnits(amountIn.toString(), fromDecimals || 18);
     const tempKey = process.env.REACT_APP_PRIVATE_KEY || '0x0000000000000000000000000000000000000000000000000000000000000001';
     const service = new SwapService(tempKey, chainId);
-    
+
     const poolDetails = await service.getPoolDetails(tokenInAddress, tokenOutAddress);
     const { fee, quote, gasEstimate, allQuotes, estimated } = await service.fetchQuote(tokenInAddress, tokenOutAddress, amountInWei);
-    
+
     const decimalsOut = toDecimals || 18;
-    
+
     // Convert all BigInt values to strings/numbers for JSON serialization
     const safePoolDetails = poolDetails.map(pool => ({
       ...pool,
@@ -454,7 +456,7 @@ app.post('/api/swap/quote-detailed', async (req, res) => {
       liquidity: pool.liquidity.toString(),
       simulated: pool.simulated || false
     }));
-    
+
     res.json({
       success: true,
       chainId,
@@ -466,9 +468,9 @@ app.post('/api/swap/quote-detailed', async (req, res) => {
       feeTier: fee,
       gasEstimate: gasEstimate.toString(),
       pools: safePoolDetails,
-      allQuotes: allQuotes.map(q => ({ 
-        fee: q.fee, 
-        amountOut: q.amountOut.toString(), 
+      allQuotes: allQuotes.map(q => ({
+        fee: q.fee,
+        amountOut: q.amountOut.toString(),
         gasEstimate: q.gasEstimate.toString(),
         estimated: q.estimated || false
       })),
@@ -487,13 +489,13 @@ app.post('/api/swap/create-payload', async (req, res) => {
     if (!chainId || !tokenIn || !tokenOut || !amountIn) {
       return res.status(400).json({ success: false, error: 'Missing required fields' });
     }
-    
+
     const config = NETWORK_CONFIGS[chainId];
     if (!config) return res.status(404).json({ success: false, error: `Chain ${chainId} not supported` });
 
     const tokenInAddress = getTokenAddress(tokenIn, chainId);
     const tokenOutAddress = getTokenAddress(tokenOut, chainId);
-    
+
     // Sanitize amountIn - limit to appropriate decimals
     const decimalsIn = fromDecimals || 18;
     const amountStr = typeof amountIn === 'number' ? amountIn.toFixed(decimalsIn) : String(amountIn);
@@ -501,11 +503,11 @@ app.post('/api/swap/create-payload', async (req, res) => {
     const parts = amountStr.split('.');
     const truncatedAmount = parts[1] ? `${parts[0]}.${parts[1].slice(0, decimalsIn)}` : parts[0];
     const amountInWei = ethers.parseUnits(truncatedAmount, decimalsIn);
-    
+
     const tempKey = process.env.REACT_APP_PRIVATE_KEY || '0x0000000000000000000000000000000000000000000000000000000000000001';
     const service = new SwapService(tempKey, chainId);
     const payload = await service.createSwapPayload(tokenInAddress, tokenOutAddress, amountInWei, slippagePercent || 5);
-    
+
     res.json({
       success: true,
       chainId,
@@ -531,10 +533,10 @@ app.post('/api/swap/execute', async (req, res) => {
     if (!chainId || !swapType || !params) {
       return res.status(400).json({ success: false, error: 'Missing required fields' });
     }
-    
+
     const key = privateKey || process.env.REACT_APP_PRIVATE_KEY;
     if (!key) return res.status(400).json({ success: false, error: 'Private key required' });
-    
+
     const manager = new MultiChainSwapManager(key);
     const result = await manager.executeSwap(chainId, swapType, params);
     res.json({ success: true, result });
@@ -548,11 +550,11 @@ app.get('/api/swap/account/:chainId/:address', async (req, res) => {
     const chainId = parseInt(req.params.chainId);
     const config = NETWORK_CONFIGS[chainId];
     if (!config) return res.status(404).json({ success: false, error: `Chain ${chainId} not supported` });
-    
+
     const provider = new ethers.JsonRpcProvider(config.rpcUrl);
     const balance = await provider.getBalance(req.params.address);
     const blockNumber = await provider.getBlockNumber();
-    
+
     res.json({
       success: true,
       account: {
@@ -576,23 +578,23 @@ app.post('/api/swap/token-balance', async (req, res) => {
     if (!chainId || !tokenAddress || !userAddress) {
       return res.status(400).json({ success: false, error: 'Missing required fields' });
     }
-    
+
     const config = NETWORK_CONFIGS[chainId];
     if (!config) return res.status(404).json({ success: false, error: `Chain ${chainId} not supported` });
-    
+
     const provider = new ethers.JsonRpcProvider(config.rpcUrl);
     const tokenContract = new ethers.Contract(tokenAddress, [
       'function balanceOf(address owner) view returns (uint256)',
       'function decimals() view returns (uint8)',
       'function symbol() view returns (string)'
     ], provider);
-    
+
     const [balance, decimals, symbol] = await Promise.all([
       tokenContract.balanceOf(userAddress),
       tokenContract.decimals(),
       tokenContract.symbol()
     ]);
-    
+
     res.json({
       success: true,
       tokenAddress,
@@ -605,6 +607,20 @@ app.post('/api/swap/token-balance', async (req, res) => {
       network: config.name
     });
   } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+// AI Chat Endpoint
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { message, history } = req.body;
+    if (!message) {
+      return res.status(400).json({ success: false, error: 'Message is required' });
+    }
+    const response = await generateAiResponse(message, history || []);
+    res.json({ success: true, response });
+  } catch (error) {
+    console.error('Chat API Error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
