@@ -1,1159 +1,694 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowDownUp, Info, Loader2, ExternalLink, Settings, TrendingUp, Droplets } from 'lucide-react';
+import {
+  ArrowDownUp, ExternalLink, Loader2, CheckCircle2, AlertCircle,
+  RefreshCw, Search, ChevronDown, Zap, Clock, TrendingUp,
+} from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useWallet } from '@/contexts/WalletContext';
-import { Slider } from '@/components/ui/slider';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { ethers } from 'ethers';
-import { swapService, PoolDetails, QuoteDetails } from '@/services/swapService';
+import { rubicSwapService, RubicChain, RubicToken, RubicRoute } from '@/services/swapService';
 
-const API_BASE_URL = 'http://localhost:3001';
-
-interface ChainConfig {
-  chainId: number;
-  name: string;
-  symbol: string;
-  type: 'mainnet' | 'testnet';
-  dexes: string[];
-  explorer: string;
-}
-
-interface Token {
-  symbol: string;
-  name?: string;
-  address: string;
-  decimals: number;
-}
-
-// ABIs
-const WETH_ABI = [
-  'function deposit() public payable',
-  'function withdraw(uint256 wad) public',
-  'function balanceOf(address owner) view returns (uint256)',
-  'function approve(address spender, uint256 amount) returns (bool)',
-  'function allowance(address owner, address spender) view returns (uint256)'
-];
-
+const NATIVE_ADDRESS = '0x0000000000000000000000000000000000000000';
 const ERC20_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
   'function decimals() view returns (uint8)',
-  'function symbol() view returns (string)',
   'function approve(address spender, uint256 amount) returns (bool)',
-  'function allowance(address owner, address spender) view returns (uint256)'
+  'function allowance(address owner, address spender) view returns (uint256)',
 ];
 
-const UNISWAP_V3_ROUTER_ABI = [
-  'function exactInputSingle(tuple(address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) external payable returns (uint256 amountOut)',
-  'function multicall(uint256 deadline, bytes[] data) external payable returns (bytes[] memory results)',
-  'function unwrapWETH9(uint256 amountMinimum, address recipient) external payable'
-];
-
-const QUOTER_ABI = [
-  'function quoteExactInputSingle(tuple(address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96) params) external returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)'
-];
-
-// Uniswap V3 Router Addresses
-const ROUTER_ADDRESSES: Record<number, string> = {
-  1: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
-  137: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
-  42161: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
-  10: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
-  8453: '0x2626664c2603336E57B271c5C0b26F421741e481',
-  11155111: '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E',
-  80002: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
-  421614: '0x101F443B4d1b059569D643917553c771E1b9663E',
-  11155420: '0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4',
-  84532: '0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4'
+// ── Chain explorer URLs ───────────────────────────────────────────────────────
+const CHAIN_EXPLORERS: Record<string, string> = {
+  ETH: 'https://etherscan.io',
+  POLYGON: 'https://polygonscan.com',
+  BSC: 'https://bscscan.com',
+  ARBITRUM: 'https://arbiscan.io',
+  OPTIMISM: 'https://optimistic.etherscan.io',
+  BASE: 'https://basescan.org',
+  AVALANCHE: 'https://snowtrace.io',
+  LINEA: 'https://lineascan.build',
+  ZKSYNC: 'https://explorer.zksync.io',
+  SCROLL: 'https://scrollscan.com',
+  MANTA: 'https://pacific-explorer.manta.network',
+  METIS: 'https://andromeda-explorer.metis.io',
+  BLAST: 'https://blastscan.io',
+  FANTOM: 'https://ftmscan.com',
+  CRONOS: 'https://cronoscan.com',
+  MOONBEAM: 'https://moonscan.io',
+  GNOSIS: 'https://gnosisscan.io',
+  CELO: 'https://celoscan.io',
+  MANTLE: 'https://explorer.mantle.xyz',
+  FLARE: 'https://flare-explorer.flare.network',
+  ROOTSTOCK: 'https://explorer.rsk.co',
 };
 
-const QUOTER_ADDRESSES: Record<number, string> = {
-  1: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e',
-  137: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e',
-  42161: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e',
-  10: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e',
-  8453: '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a',
-  11155111: '0xEd1f6473345F45b75F8179591dd5bA1888cf2FB3',
-  80002: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e'
-};
+function getExplorerTxUrl(blockchainName: string | undefined, txHash: string): string {
+  const base = CHAIN_EXPLORERS[blockchainName?.toUpperCase() ?? ''] || 'https://etherscan.io';
+  return `${base}/tx/${txHash}`;
+}
 
-const WRAPPED_NATIVE: Record<number, string> = {
-  1: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-  137: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
-  42161: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
-  10: '0x4200000000000000000000000000000000000006',
-  8453: '0x4200000000000000000000000000000000000006',
-  11155111: '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14',
-  80002: '0x360ad4f9a9A8EFe9A8DCB5f461c4Cc1047E1Dcf9',
-  421614: '0x980B62Da83eFf3D4576C647993b0c1D7faf17c73',
-  11155420: '0x4200000000000000000000000000000000000006',
-  84532: '0x4200000000000000000000000000000000000006'
-};
-
-const RPC_URLS: Record<number, string> = {
-  1: 'https://ethereum-rpc.publicnode.com',
-  137: 'https://polygon-rpc.com',
-  42161: 'https://arb1.arbitrum.io/rpc',
-  10: 'https://mainnet.optimism.io',
-  8453: 'https://mainnet.base.org',
-  11155111: 'https://rpc.sepolia.org',
-  80002: 'https://rpc-amoy.polygon.technology',
-  421614: 'https://sepolia-rollup.arbitrum.io/rpc',
-  11155420: 'https://sepolia.optimism.io',
-  84532: 'https://sepolia.base.org'
-};
-
-const FEE_TIERS = [500, 3000, 10000];
-const ADDRESS_THIS = '0x0000000000000000000000000000000000000002';
-
-const Swap = () => {
-  const { address, isConnected, chainId: walletChainId } = useWallet();
-  const { toast } = useToast();
-  
-  const [chains, setChains] = useState<ChainConfig[]>([]);
-  const [selectedChain, setSelectedChain] = useState<ChainConfig | null>(null);
-  const [tokens, setTokens] = useState<Record<string, Token>>({});
-  const [fromToken, setFromToken] = useState<string>('native');
-  const [toToken, setToToken] = useState<string>('');
-  const [amount, setAmount] = useState('');
-  const [slippage, setSlippage] = useState(1);
-  const [isSwapping, setIsSwapping] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [networkMode, setNetworkMode] = useState<'mainnet' | 'testnet'>('testnet');
-  const [estimatedOutput, setEstimatedOutput] = useState<string>('0.0');
-  const [balance, setBalance] = useState<string>('0');
-  const [txHash, setTxHash] = useState<string | null>(null);
-  const [isLoadingQuote, setIsLoadingQuote] = useState(false);
-  const [quoteError, setQuoteError] = useState<string | null>(null);
-  
-  // New state for detailed swap information
-  const [poolDetails, setPoolDetails] = useState<PoolDetails[]>([]);
-  const [allQuotes, setAllQuotes] = useState<QuoteDetails[]>([]);
-  const [selectedFeeTier, setSelectedFeeTier] = useState<number>(3000);
-  const [gasEstimate, setGasEstimate] = useState<string>('0');
-  const [showDetails, setShowDetails] = useState(false);
-  const [balanceRefreshTrigger, setBalanceRefreshTrigger] = useState<number>(0);
-
-  // Fetch chains
-  useEffect(() => {
-    const fetchChains = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/swap/chains?mode=${networkMode}`);
-        const data = await response.json();
-        
-        if (data.success) {
-          setChains(data.chains);
-          if (data.chains.length > 0) {
-            const defaultChain = data.chains.find((c: ChainConfig) => c.chainId === walletChainId) || data.chains[0];
-            setSelectedChain(defaultChain);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch chains:', error);
-        toast({ title: 'Error', description: 'Failed to load chains', variant: 'destructive' });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchChains();
-  }, [networkMode, walletChainId, toast]);
-
-  // Auto-switch network when selected chain changes
-  useEffect(() => {
-    const switchNetwork = async () => {
-      if (!selectedChain || !window.ethereum || !isConnected) return;
-      
-      try {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const network = await provider.getNetwork();
-        const currentChainId = Number(network.chainId);
-        
-        // If already on the correct network, just fetch balance
-        if (currentChainId === selectedChain.chainId) {
-          return;
-        }
-        
-        // Attempt to switch network
-        try {
-          await window.ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: `0x${selectedChain.chainId.toString(16)}` }],
-          });
-          
-          toast({ 
-            title: 'Network Switched', 
-            description: `Switched to ${selectedChain.name}` 
-          });
-          
-        } catch (switchError: any) {
-          // If network doesn't exist in wallet, add it
-          if (switchError.code === 4902) {
-            try {
-              await window.ethereum.request({
-                method: 'wallet_addEthereumChain',
-                params: [{
-                  chainId: `0x${selectedChain.chainId.toString(16)}`,
-                  chainName: selectedChain.name,
-                  nativeCurrency: { 
-                    name: selectedChain.symbol, 
-                    symbol: selectedChain.symbol, 
-                    decimals: 18 
-                  },
-                  rpcUrls: [RPC_URLS[selectedChain.chainId]],
-                  blockExplorerUrls: [selectedChain.explorer]
-                }],
-              });
-              
-              toast({ 
-                title: 'Network Added', 
-                description: `Added and switched to ${selectedChain.name}` 
-              });
-              
-            } catch (addError) {
-              console.error('Failed to add network:', addError);
-              toast({ 
-                title: 'Network Switch Failed', 
-                description: 'Could not add the network to your wallet', 
-                variant: 'destructive' 
-              });
-            }
-          } else if (switchError.code === 4001) {
-            // User rejected the request
-            console.log('User rejected network switch');
-          } else {
-            console.error('Failed to switch network:', switchError);
-            toast({ 
-              title: 'Network Switch Failed', 
-              description: 'Could not switch to the selected network', 
-              variant: 'destructive' 
-            });
-          }
-        }
-      } catch (error) {
-        console.error('Network switch error:', error);
-      }
-    };
-    
-    switchNetwork();
-  }, [selectedChain, isConnected, toast]);
-
-  // Fetch tokens
-  useEffect(() => {
-    const fetchTokens = async () => {
-      if (!selectedChain) return;
-      
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/swap/tokens/${selectedChain.chainId}`);
-        const data = await response.json();
-        
-        if (data.success) {
-          setTokens(data.tokens);
-          setFromToken('native');
-          const tokenKeys = Object.keys(data.tokens);
-          const defaultTo = tokenKeys.find(k => k === 'wrappedNative') || tokenKeys.find(k => k !== 'native') || '';
-          setToToken(defaultTo);
-          // Reset amount and quote when changing chains
-          setAmount('');
-          setEstimatedOutput('0.0');
-          setQuoteError(null);
-          setPoolDetails([]);
-          setAllQuotes([]);
-          setGasEstimate('0');
-        }
-      } catch (error) {
-        console.error('Failed to fetch tokens:', error);
-      }
-    };
-    fetchTokens();
-  }, [selectedChain]);
-
-  // Fetch balance for from token
-  useEffect(() => {
-    const fetchBalance = async () => {
-      if (!selectedChain || !address || !fromToken) {
-        setBalance('0');
-        return;
-      }
-      
-      try {
-        const fromTokenData = tokens[fromToken];
-        
-        if (!fromTokenData) {
-          setBalance('0');
-          return;
-        }
-
-        // For native token
-        if (fromToken === 'native') {
-          try {
-            // First try to get balance from connected wallet if on same network
-            if (window.ethereum) {
-              const provider = new ethers.BrowserProvider(window.ethereum);
-              const network = await provider.getNetwork();
-              
-              if (Number(network.chainId) === selectedChain.chainId) {
-                // On correct network, fetch directly
-                const balanceWei = await provider.getBalance(address);
-                setBalance(parseFloat(ethers.formatEther(balanceWei)).toFixed(6));
-                return;
-              }
-            }
-            
-            // Fallback to API for cross-chain balance
-            const response = await fetch(`${API_BASE_URL}/api/swap/account/${selectedChain.chainId}/${address}`);
-            const data = await response.json();
-            if (data.success) {
-              setBalance(parseFloat(data.account.balance).toFixed(6));
-            } else {
-              setBalance('0');
-            }
-          } catch (error) {
-            console.error('Failed to fetch native balance:', error);
-            setBalance('0');
-          }
-        } else {
-          // For ERC20 tokens
-          try {
-            // Try direct query if on same network
-            if (window.ethereum) {
-              const provider = new ethers.BrowserProvider(window.ethereum);
-              const network = await provider.getNetwork();
-              
-              if (Number(network.chainId) === selectedChain.chainId) {
-                const tokenContract = new ethers.Contract(fromTokenData.address, ERC20_ABI, provider);
-                const tokenBalance = await tokenContract.balanceOf(address);
-                const decimals = fromTokenData.decimals || 18;
-                setBalance(parseFloat(ethers.formatUnits(tokenBalance, decimals)).toFixed(6));
-                return;
-              }
-            }
-            
-            // Fallback to API for cross-chain token balance
-            const response = await fetch(`${API_BASE_URL}/api/swap/token-balance`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                chainId: selectedChain.chainId,
-                tokenAddress: fromTokenData.address,
-                userAddress: address
-              })
-            });
-            const data = await response.json();
-            if (data.success) {
-              setBalance(parseFloat(data.balance).toFixed(6));
-            } else {
-              setBalance('0');
-            }
-          } catch (error) {
-            console.error('Failed to fetch token balance:', error);
-            setBalance('0');
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch balance:', error);
-        setBalance('0');
-      }
-    };
-    
-    // Debounce balance fetching to avoid too many requests
-    const timeoutId = setTimeout(fetchBalance, 300);
-    return () => clearTimeout(timeoutId);
-  }, [selectedChain, address, fromToken, tokens, balanceRefreshTrigger]);
-
-  // Fetch real quote from backend with detailed pool information
-  useEffect(() => {
-    const fetchQuote = async () => {
-      if (!amount || parseFloat(amount) <= 0 || !selectedChain || !fromToken || !toToken) {
-        setEstimatedOutput('0.0');
-        setQuoteError(null);
-        setIsLoadingQuote(false);
-        setPoolDetails([]);
-        setAllQuotes([]);
-        setGasEstimate('0');
-        return;
-      }
-
-      const fromTokenData = tokens[fromToken];
-      const toTokenData = tokens[toToken];
-
-      if (!fromTokenData || !toTokenData) {
-        setEstimatedOutput('0.0');
-        setIsLoadingQuote(false);
-        return;
-      }
-
-      setIsLoadingQuote(true);
-      setQuoteError(null);
-
-      try {
-        // For wrap/unwrap, use 1:1 ratio
-        if ((fromToken === 'native' && toToken === 'wrappedNative') || 
-            (fromToken === 'wrappedNative' && toToken === 'native')) {
-          setEstimatedOutput(amount);
-          setIsLoadingQuote(false);
-          setPoolDetails([]);
-          setAllQuotes([]);
-          setGasEstimate('0');
-          return;
-        }
-
-        // Step 1 & 2: Get detailed quote with pool information
-        const detailedQuote = await swapService.getDetailedQuote(
-          selectedChain.chainId,
-          fromToken,
-          toToken,
-          amount,
-          fromTokenData.decimals,
-          toTokenData.decimals
-        );
-
-        if (detailedQuote.success && detailedQuote.estimatedOutput) {
-          const output = parseFloat(detailedQuote.estimatedOutput);
-          // Apply slippage tolerance
-          const slippageMultiplier = (100 - slippage) / 100;
-          const outputWithSlippage = output * slippageMultiplier;
-          
-          setEstimatedOutput(outputWithSlippage.toFixed(6));
-          setPoolDetails(detailedQuote.pools);
-          setAllQuotes(detailedQuote.allQuotes);
-          setSelectedFeeTier(detailedQuote.feeTier);
-          setGasEstimate(detailedQuote.gasEstimate || '0');
-          setIsLoadingQuote(false);
-          
-          console.log('✅ Quote fetched successfully:', {
-            pools: detailedQuote.pools.length,
-            feeTier: detailedQuote.feeTier,
-            output: detailedQuote.estimatedOutput
-          });
-        } else {
-          setQuoteError(detailedQuote.error || 'Unable to get quote');
-          setEstimatedOutput('0.0');
-          setPoolDetails([]);
-          setAllQuotes([]);
-          setIsLoadingQuote(false);
-        }
-      } catch (error) {
-        console.error('Failed to fetch quote:', error);
-        setQuoteError('Failed to fetch quote');
-        // Fallback to simple estimation
-        const inputAmount = parseFloat(amount);
-        const slippageMultiplier = (100 - slippage) / 100;
-        setEstimatedOutput((inputAmount * slippageMultiplier * 0.98).toFixed(6));
-        setPoolDetails([]);
-        setAllQuotes([]);
-        setIsLoadingQuote(false);
-      }
-    };
-
-    // Debounce the quote fetching
-    const timeoutId = setTimeout(fetchQuote, 500);
-    return () => clearTimeout(timeoutId);
-  }, [amount, slippage, selectedChain, fromToken, toToken, tokens]);
-
-  const findBestFeeTier = async (
-    provider: ethers.BrowserProvider,
-    tokenIn: string,
-    tokenOut: string,
-    amountIn: bigint,
-    chainId: number
-  ): Promise<number> => {
-    const quoterAddress = QUOTER_ADDRESSES[chainId];
-    if (!quoterAddress) return 3000;
-
-    const quoter = new ethers.Contract(quoterAddress, QUOTER_ABI, provider);
-
-    for (const fee of FEE_TIERS) {
-      try {
-        const params = { tokenIn, tokenOut, amountIn, fee, sqrtPriceLimitX96: 0n };
-        await quoter.quoteExactInputSingle.staticCall(params);
-        return fee;
-      } catch {
-        continue;
-      }
-    }
-    return 3000;
+function formatProvider(p: string | undefined | null): string {
+  const map: Record<string, string> = {
+    // Uniswap
+    UNI_SWAP_V3: 'Uniswap V3',  UNISWAP_V3: 'Uniswap V3',
+    UNISWAP_V2: 'Uniswap V2',   UNI_SWAP_V2: 'Uniswap V2',
+    // Aggregators
+    ODOS: 'Odos',
+    ONE_INCH: '1inch',           ONE_INCH_V4: '1inch V4',  ONE_INCH_V5: '1inch V5',
+    OPEN_OCEAN: 'OpenOcean',
+    RANGO: 'Rango',
+    LIFI: 'LI.FI',
+    XY_DEX: 'XY Finance',
+    UNIZEN: 'Unizen',
+    ZRX: '0x Protocol',
+    BRIDGERS: 'Bridgers',
+    NATIVE_ROUTER: 'Native Router',
+    SQUIDROUTER: 'Squid Router',
+    // AMMs
+    SUSHI_SWAP: 'SushiSwap',
+    PANCAKE_SWAP_PROVIDER: 'PancakeSwap',  PANCAKE_SWAP: 'PancakeSwap',
+    CURVE: 'Curve',
+    BALANCER: 'Balancer',
+    DODO: 'DODO',
+    VERSE: 'Verse',
+    WRAPPED: 'Wrapped',
+    // Bridges
+    STARGATE: 'Stargate', STARGATE_V2: 'Stargate V2',
+    ACROSS: 'Across',
+    SYMBIOSIS: 'Symbiosis',
+    CELER: 'Celer', CELER_BRIDGE: 'Celer Bridge',
+    MULTICHAIN: 'Multichain',
+    WORMHOLE: 'Wormhole',
+    ORBITER_BRIDGE: 'Orbiter', ORBITER_BRIDGE_V2: 'Orbiter V2',
+    RELAY: 'Relay',
+    MESON: 'Meson',
+    DLN: 'DLN',
+    ROUTER: 'Router Protocol',
   };
+  if (!p) return 'Unknown';
+  return map[p] ?? p.split('_').map(w => w[0] + w.slice(1).toLowerCase()).join(' ');
+}
 
-  const handleSwap = async () => {
-    if (!isConnected) {
-      toast({ title: 'Wallet Not Connected', description: 'Please connect your wallet', variant: 'destructive' });
-      return;
-    }
+function fmtAmt(v: string | number | undefined, dp = 6): string {
+  const n = parseFloat(String(v ?? '0'));
+  return isNaN(n) ? '0' : n.toFixed(dp);
+}
 
-    if (!amount || parseFloat(amount) <= 0) {
-      toast({ title: 'Invalid Amount', description: 'Please enter a valid amount', variant: 'destructive' });
-      return;
-    }
+// ── Token Picker Dialog ───────────────────────────────────────────────────────
+interface TokenPickerProps {
+  blockchain: string;
+  selected: RubicToken | null;
+  onSelect: (t: RubicToken) => void;
+  label: string;
+}
+function TokenPicker({ blockchain, selected, onSelect, label }: TokenPickerProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [tokens, setTokens] = useState<RubicToken[]>([]);
+  const [loading, setLoading] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    if (!selectedChain || !window.ethereum) {
-      toast({ title: 'Error', description: 'No chain selected or wallet not found', variant: 'destructive' });
-      return;
-    }
-
-    // Validate balance before attempting swap
-    const fromTokenData = tokens[fromToken];
-    if (!fromTokenData) {
-      toast({ title: 'Error', description: 'Invalid token selection', variant: 'destructive' });
-      return;
-    }
-
+  const loadTokens = useCallback(async (q: string) => {
+    if (!blockchain) return;
+    setLoading(true);
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const userAddress = address || await (await provider.getSigner()).getAddress();
-      const amountValue = parseFloat(amount);
-
-      // Check balance based on token type
-      let hasBalance = false;
-      let tokenSymbol = fromTokenData.symbol;
-      let availableBalance = '0';
-
-      if (fromToken === 'native') {
-        const balanceWei = await provider.getBalance(userAddress);
-        const balanceEth = parseFloat(ethers.formatEther(balanceWei));
-        availableBalance = balanceEth.toFixed(6);
-        // Account for gas fees (estimate ~0.01 for buffer)
-        hasBalance = balanceEth >= amountValue + 0.01;
-        if (!hasBalance) {
-          toast({
-            title: 'Insufficient Balance',
-            description: `You need ${amountValue.toFixed(6)} ${tokenSymbol} but only have ${availableBalance} ${tokenSymbol}. Reserve some for gas fees.`,
-            variant: 'destructive'
-          });
-          return;
-        }
-      } else {
-        // ERC20 token balance check
-        const tokenContract = new ethers.Contract(fromTokenData.address, ERC20_ABI, provider);
-        const tokenBalance = await tokenContract.balanceOf(userAddress);
-        const decimals = fromTokenData.decimals || 18;
-        const balanceFormatted = parseFloat(ethers.formatUnits(tokenBalance, decimals));
-        availableBalance = balanceFormatted.toFixed(6);
-        hasBalance = balanceFormatted >= amountValue;
-        
-        if (!hasBalance) {
-          toast({
-            title: 'Insufficient Token Balance',
-            description: `You need ${amountValue.toFixed(6)} ${tokenSymbol} but only have ${availableBalance} ${tokenSymbol}`,
-            variant: 'destructive'
-          });
-          return;
-        }
-      }
-    } catch (error) {
-      console.error('Balance check error:', error);
-      toast({ title: 'Error', description: 'Failed to check balance', variant: 'destructive' });
-      return;
-    }
-
-    setIsSwapping(true);
-    setTxHash(null);
-    
-    try {
-      let provider = new ethers.BrowserProvider(window.ethereum);
-      let network = await provider.getNetwork();
-      
-      // Switch network if needed
-      if (Number(network.chainId) !== selectedChain.chainId) {
-        toast({ title: 'Switching Network', description: `Please switch to ${selectedChain.name}` });
-        
-        try {
-          await window.ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: `0x${selectedChain.chainId.toString(16)}` }],
-          });
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          provider = new ethers.BrowserProvider(window.ethereum);
-        } catch (switchError: any) {
-          if (switchError.code === 4902) {
-            await window.ethereum.request({
-              method: 'wallet_addEthereumChain',
-              params: [{
-                chainId: `0x${selectedChain.chainId.toString(16)}`,
-                chainName: selectedChain.name,
-                nativeCurrency: { name: selectedChain.symbol, symbol: selectedChain.symbol, decimals: 18 },
-                rpcUrls: [RPC_URLS[selectedChain.chainId]],
-                blockExplorerUrls: [selectedChain.explorer]
-              }],
-            });
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            provider = new ethers.BrowserProvider(window.ethereum);
-          } else {
-            throw switchError;
-          }
-        }
-      }
-
-      const signer = await provider.getSigner();
-      const userAddress = await signer.getAddress();
-      const fromTokenData = tokens[fromToken];
-      const toTokenData = tokens[toToken];
-      
-      if (!fromTokenData || !toTokenData) {
-        throw new Error('Invalid token selection');
-      }
-
-      const fromDecimals = fromTokenData.decimals || 18;
-      const amountIn = ethers.parseUnits(amount, fromDecimals);
-      const deadline = Math.floor(Date.now() / 1000) + 1200;
-      const wrappedNativeAddress = WRAPPED_NATIVE[selectedChain.chainId];
-      const routerAddress = ROUTER_ADDRESSES[selectedChain.chainId];
-
-      let tx;
-
-      // WRAP: Native -> Wrapped
-      if (fromToken === 'native' && toToken === 'wrappedNative') {
-        toast({ title: 'Wrapping Token', description: `Wrapping ${amount} ${selectedChain.symbol}` });
-        const wrappedContract = new ethers.Contract(wrappedNativeAddress, WETH_ABI, signer);
-        tx = await wrappedContract.deposit({ value: amountIn });
-      }
-      // UNWRAP: Wrapped -> Native
-      else if (fromToken === 'wrappedNative' && toToken === 'native') {
-        toast({ title: 'Unwrapping Token', description: `Unwrapping ${amount} W${selectedChain.symbol}` });
-        const wrappedContract = new ethers.Contract(wrappedNativeAddress, WETH_ABI, signer);
-        tx = await wrappedContract.withdraw(amountIn);
-      }
-      // SWAP: Native -> Token
-      else if (fromToken === 'native') {
-        toast({ title: 'Swapping', description: `Swapping ${amount} ${selectedChain.symbol} for ${toTokenData.symbol}` });
-        
-        const workingFee = await findBestFeeTier(provider, wrappedNativeAddress, toTokenData.address, amountIn, selectedChain.chainId);
-        const router = new ethers.Contract(routerAddress, UNISWAP_V3_ROUTER_ABI, signer);
-        
-        const params = {
-          tokenIn: wrappedNativeAddress,
-          tokenOut: toTokenData.address,
-          fee: workingFee,
-          recipient: userAddress,
-          amountIn: amountIn,
-          amountOutMinimum: 0n,
-          sqrtPriceLimitX96: 0n
-        };
-
-        const iface = new ethers.Interface(UNISWAP_V3_ROUTER_ABI);
-        const swapCalldata = iface.encodeFunctionData('exactInputSingle', [
-          [params.tokenIn, params.tokenOut, params.fee, params.recipient, params.amountIn, params.amountOutMinimum, params.sqrtPriceLimitX96]
-        ]);
-
-        tx = await router.multicall(deadline, [swapCalldata], { value: amountIn, gasLimit: 350000n });
-      }
-      // SWAP: Token -> Native
-      else if (toToken === 'native') {
-        toast({ title: 'Swapping', description: `Swapping ${amount} ${fromTokenData.symbol} for ${selectedChain.symbol}` });
-        
-        const tokenContract = new ethers.Contract(fromTokenData.address, ERC20_ABI, signer);
-        const allowance = await tokenContract.allowance(userAddress, routerAddress);
-        
-        if (allowance < amountIn) {
-          toast({ title: 'Approving Token', description: `Please approve ${fromTokenData.symbol}` });
-          const approveTx = await tokenContract.approve(routerAddress, ethers.MaxUint256);
-          await approveTx.wait();
-        }
-
-        const workingFee = await findBestFeeTier(provider, fromTokenData.address, wrappedNativeAddress, amountIn, selectedChain.chainId);
-        const router = new ethers.Contract(routerAddress, UNISWAP_V3_ROUTER_ABI, signer);
-        
-        const params = {
-          tokenIn: fromTokenData.address,
-          tokenOut: wrappedNativeAddress,
-          fee: workingFee,
-          recipient: ADDRESS_THIS,
-          amountIn: amountIn,
-          amountOutMinimum: 0n,
-          sqrtPriceLimitX96: 0n
-        };
-
-        const iface = new ethers.Interface(UNISWAP_V3_ROUTER_ABI);
-        const swapCalldata = iface.encodeFunctionData('exactInputSingle', [
-          [params.tokenIn, params.tokenOut, params.fee, params.recipient, params.amountIn, params.amountOutMinimum, params.sqrtPriceLimitX96]
-        ]);
-        const unwrapCalldata = iface.encodeFunctionData('unwrapWETH9', [0n, userAddress]);
-
-        tx = await router.multicall(deadline, [swapCalldata, unwrapCalldata], { gasLimit: 450000n });
-      }
-      // SWAP: Token -> Token
-      else {
-        toast({ title: 'Swapping', description: `Swapping ${amount} ${fromTokenData.symbol} for ${toTokenData.symbol}` });
-        
-        const tokenContract = new ethers.Contract(fromTokenData.address, ERC20_ABI, signer);
-        const allowance = await tokenContract.allowance(userAddress, routerAddress);
-        
-        if (allowance < amountIn) {
-          toast({ title: 'Approving Token', description: `Please approve ${fromTokenData.symbol}` });
-          const approveTx = await tokenContract.approve(routerAddress, ethers.MaxUint256);
-          await approveTx.wait();
-        }
-
-        const workingFee = await findBestFeeTier(provider, fromTokenData.address, toTokenData.address, amountIn, selectedChain.chainId);
-        const router = new ethers.Contract(routerAddress, UNISWAP_V3_ROUTER_ABI, signer);
-        
-        const params = {
-          tokenIn: fromTokenData.address,
-          tokenOut: toTokenData.address,
-          fee: workingFee,
-          recipient: userAddress,
-          amountIn: amountIn,
-          amountOutMinimum: 0n,
-          sqrtPriceLimitX96: 0n
-        };
-
-        const iface = new ethers.Interface(UNISWAP_V3_ROUTER_ABI);
-        const swapCalldata = iface.encodeFunctionData('exactInputSingle', [
-          [params.tokenIn, params.tokenOut, params.fee, params.recipient, params.amountIn, params.amountOutMinimum, params.sqrtPriceLimitX96]
-        ]);
-
-        tx = await router.multicall(deadline, [swapCalldata], { gasLimit: 400000n });
-      }
-
-      toast({ title: 'Transaction Submitted', description: 'Waiting for confirmation...' });
-      setTxHash(tx.hash);
-      const receipt = await tx.wait();
-      
-      // Wait a moment for balance to update on-chain
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Trigger balance refresh by updating the trigger state
-      setBalanceRefreshTrigger(prev => prev + 1);
-      
-      // Fetch updated balances for both tokens to show in success message
-      let fromBalance = '0';
-      let toBalance = '0';
-      
-      try {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        
-        // Get new balance of fromToken
-        if (fromToken === 'native') {
-          const balanceWei = await provider.getBalance(userAddress);
-          fromBalance = parseFloat(ethers.formatEther(balanceWei)).toFixed(4);
-        } else {
-          const tokenContract = new ethers.Contract(fromTokenData.address, ERC20_ABI, provider);
-          const tokenBalance = await tokenContract.balanceOf(userAddress);
-          fromBalance = parseFloat(ethers.formatUnits(tokenBalance, fromDecimals)).toFixed(4);
-        }
-        
-        // Get new balance of toToken
-        if (toToken === 'native') {
-          const balanceWei = await provider.getBalance(userAddress);
-          toBalance = parseFloat(ethers.formatEther(balanceWei)).toFixed(4);
-        } else {
-          const toDecimals = toTokenData.decimals || 18;
-          const tokenContract = new ethers.Contract(toTokenData.address, ERC20_ABI, provider);
-          const tokenBalance = await tokenContract.balanceOf(userAddress);
-          toBalance = parseFloat(ethers.formatUnits(tokenBalance, toDecimals)).toFixed(4);
-        }
-      } catch (balanceError) {
-        console.error('Failed to fetch updated balances:', balanceError);
-      }
-      
-      toast({ 
-        title: 'Swap Successful! 🎉', 
-        description: `Confirmed in block ${receipt.blockNumber}. New balances: ${fromBalance} ${fromTokenData.symbol} | ${toBalance} ${toTokenData.symbol}` 
-      });
-      setAmount('');
-
-    } catch (error: any) {
-      console.error('Swap error:', error);
-      
-      let errorMessage = 'An error occurred during the swap';
-      let errorTitle = 'Swap Failed';
-      
-      if (error.code === 'ACTION_REJECTED' || error.code === 4001) {
-        errorMessage = 'Transaction was rejected by user';
-      } else if (error.code === 'INSUFFICIENT_FUNDS') {
-        errorTitle = 'Insufficient Funds';
-        errorMessage = 'Not enough balance to cover transaction and gas fees';
-      } else if (error.message?.includes('Insufficient') && error.message?.includes('balance')) {
-        errorTitle = 'Insufficient Balance';
-        errorMessage = error.message;
-      } else if (error.message?.includes('execution reverted')) {
-        errorMessage = 'Swap failed. The pool may not exist for this token pair or insufficient liquidity.';
-      } else if (error.message?.includes('user rejected')) {
-        errorMessage = 'Transaction was rejected by user';
-      } else if (error.message) {
-        errorMessage = error.message.substring(0, 200);
-      }
-
-      toast({ title: errorTitle, description: errorMessage, variant: 'destructive' });
+      const res = await rubicSwapService.getTokens(blockchain, q, 1, 50);
+      setTokens(res);
+    } catch {
+      setTokens([]);
     } finally {
-      setIsSwapping(false);
+      setLoading(false);
     }
-  };
+  }, [blockchain]);
 
-  const swapTokens = () => {
-    const temp = fromToken;
-    setFromToken(toToken);
-    setToToken(temp);
-    // Reset quote when swapping tokens
-    setEstimatedOutput('0.0');
-    setQuoteError(null);
-    setPoolDetails([]);
-    setAllQuotes([]);
-    setGasEstimate('0');
-  };
+  useEffect(() => {
+    if (open) loadTokens('');
+  }, [open, blockchain, loadTokens]);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen">
-        <Navbar />
-        <div className="pt-24 pb-20 px-4 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
-        <Footer />
-      </div>
-    );
-  }
+  const handleSearch = (v: string) => {
+    setSearch(v);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => loadTokens(v), 400);
+  };
 
   return (
-    <div className="min-h-screen">
-      <Navbar />
-      
-      <div className="pt-24 pb-20 px-4">
-        <div className="container mx-auto max-w-2xl">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-8 text-center"
-          >
-            <h1 className="text-4xl font-bold gradient-text mb-2">Uniswap Multi-Chain Swap</h1>
-            <p className="text-muted-foreground">Swap tokens using Uniswap V3 across networks</p>
-          </motion.div>
-
-          {/* Network Mode Toggle */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 }}
-            className="mb-4 flex justify-center gap-2"
-          >
-            <Button
-              variant={networkMode === 'mainnet' ? 'default' : 'outline'}
-              onClick={() => setNetworkMode('mainnet')}
-              size="sm"
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-2 text-sm font-medium transition-all min-w-[120px]">
+          {selected ? (
+            <>
+              {selected.image && <img src={selected.image} alt="" className="w-5 h-5 rounded-full" onError={e => ((e.target as HTMLImageElement).style.display='none')} />}
+              <span>{selected.symbol}</span>
+            </>
+          ) : (
+            <span className="text-gray-400">{label}</span>
+          )}
+          <ChevronDown className="w-3 h-3 ml-auto text-gray-400" />
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-w-sm bg-gray-900 border-white/10 text-white">
+        <DialogHeader>
+          <DialogTitle>Select Token{blockchain ? ` on ${blockchain}` : ''}</DialogTitle>
+        </DialogHeader>
+        <div className="relative mt-2">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Input
+            placeholder="Search by symbol..."
+            className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-gray-500"
+            value={search}
+            onChange={e => handleSearch(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <div className="mt-2 max-h-72 overflow-y-auto space-y-1 pr-1">
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
+            </div>
+          ) : tokens.length === 0 ? (
+            <p className="text-center text-gray-500 py-8 text-sm">No tokens found</p>
+          ) : tokens.map(t => (
+            <button
+              key={t.address + t.symbol}
+              onClick={() => { onSelect(t); setOpen(false); setSearch(''); }}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-left ${selected?.address === t.address ? 'bg-blue-500/20 border border-blue-500/40' : ''}`}
             >
-              Mainnet
-            </Button>
-            <Button
-              variant={networkMode === 'testnet' ? 'default' : 'outline'}
-              onClick={() => setNetworkMode('testnet')}
-              size="sm"
+              {t.image && <img src={t.image} alt="" className="w-7 h-7 rounded-full flex-shrink-0" onError={e => ((e.target as HTMLImageElement).style.display='none')} />}
+              <div className="min-w-0">
+                <p className="font-medium text-sm truncate">{t.symbol}</p>
+                <p className="text-xs text-gray-400 truncate">{t.name}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Chain Selector ────────────────────────────────────────────────────────────
+interface ChainSelectorProps {
+  chains: RubicChain[];
+  selected: RubicChain | null;
+  onSelect: (c: RubicChain) => void;
+  label: string;
+}
+function ChainSelector({ chains, selected, onSelect, label }: ChainSelectorProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const filtered = search
+    ? chains.filter(c => c.blockchainName.toLowerCase().includes(search.toLowerCase()))
+    : chains;
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-2 text-sm font-medium transition-all min-w-[140px]">
+          <span>{selected ? selected.blockchainName : <span className="text-gray-400">{label}</span>}</span>
+          <ChevronDown className="w-3 h-3 ml-auto text-gray-400" />
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-w-sm bg-gray-900 border-white/10 text-white">
+        <DialogHeader><DialogTitle>Select Chain</DialogTitle></DialogHeader>
+        <div className="relative mt-2">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Input
+            placeholder="Search chain..."
+            className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-gray-500"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <div className="mt-2 max-h-72 overflow-y-auto space-y-1 pr-1">
+          {filtered.map(c => (
+            <button
+              key={c.blockchainName}
+              onClick={() => { onSelect(c); setOpen(false); setSearch(''); }}
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-left ${selected?.blockchainName === c.blockchainName ? 'bg-blue-500/20 border border-blue-500/40' : ''}`}
             >
-              Testnet
-            </Button>
-          </motion.div>
+              <span className="font-medium text-sm">{c.blockchainName}</span>
+              <Badge variant="outline" className="ml-auto text-xs border-white/20 text-gray-400">{c.type}</Badge>
+            </button>
+          ))}
+          {filtered.length === 0 && <p className="text-center text-gray-500 py-6 text-sm">No chains found</p>}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="glass-card p-8 rounded-xl"
-          >
-            {/* Chain Selection */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium mb-2">Network</label>
-              <Select 
-                value={selectedChain?.chainId.toString() || ''} 
-                onValueChange={(value) => {
-                  const chain = chains.find(c => c.chainId.toString() === value);
-                  if (chain) {
-                    setSelectedChain(chain);
-                    // Reset quote and errors when changing network
-                    setEstimatedOutput('0.0');
-                    setQuoteError(null);
-                    setPoolDetails([]);
-                    setAllQuotes([]);
-                    setGasEstimate('0');
-                    setTxHash(null);
-                  }
-                }}
-              >
-                <SelectTrigger className="glass-card">
-                  <SelectValue placeholder="Select Network" />
-                </SelectTrigger>
-                <SelectContent className="glass-card border-white/10">
-                  {chains.map(chain => (
-                    <SelectItem key={chain.chainId} value={chain.chainId.toString()}>
-                      <div className="flex items-center gap-2">
-                        <span>{chain.name}</span>
-                        <span className="text-xs text-muted-foreground">({chain.symbol})</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* From Section */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">From</label>
-              <div className="glass-card p-4 rounded-lg space-y-3">
-                <Select value={fromToken} onValueChange={setFromToken}>
-                  <SelectTrigger className="glass-card">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="glass-card border-white/10">
-                    {Object.entries(tokens)
-                      .filter(([key]) => key !== toToken)
-                      .map(([key, token]) => (
-                        <SelectItem key={key} value={key}>
-                          {token.symbol}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-                <div className="relative">
-                  <Input
-                    type="number"
-                    placeholder="0.0"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    className="glass-card text-2xl font-bold border-none focus-visible:ring-primary pr-16"
-                  />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs"
-                    onClick={() => setAmount(balance)}
-                    disabled={!balance || balance === '0'}
-                  >
-                    MAX
-                  </Button>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Balance: {balance} {tokens[fromToken]?.symbol || selectedChain?.symbol}
-                </p>
-              </div>
-            </div>
-
-            {/* Swap Icon */}
-            <div className="flex justify-center my-4">
-              <button 
-                className="glass-card-hover p-3 rounded-full transition-transform hover:rotate-180 duration-300"
-                onClick={swapTokens}
-              >
-                <ArrowDownUp className="w-6 h-6 text-primary" />
-              </button>
-            </div>
-
-            {/* To Section */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium mb-2">To</label>
-              <div className="glass-card p-4 rounded-lg space-y-3">
-                <Select value={toToken} onValueChange={setToToken}>
-                  <SelectTrigger className="glass-card">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="glass-card border-white/10">
-                    {Object.entries(tokens)
-                      .filter(([key]) => key !== fromToken)
-                      .map(([key, token]) => (
-                        <SelectItem key={key} value={key}>
-                          {token.symbol}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-                <div className="text-2xl font-bold text-muted-foreground flex items-center gap-2">
-                  {isLoadingQuote ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span className="text-sm">Fetching quote...</span>
-                    </>
-                  ) : (
-                    estimatedOutput
-                  )}
-                </div>
-                {quoteError ? (
-                  <p className="text-sm text-red-500">{quoteError}</p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Estimated receive amount</p>
-                )}
-              </div>
-            </div>
-
-            {/* Swap Details */}
-            <div className="glass-card p-4 rounded-lg mb-6 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Network</span>
-                <span className="font-medium">{selectedChain?.name || 'Not selected'}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">DEX</span>
-                <span className="font-medium">Uniswap V3</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Slippage Tolerance</span>
-                <span className="font-medium">{slippage}%</span>
-              </div>
-              {selectedFeeTier > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Best Fee Tier</span>
-                  <span className="font-medium text-primary">{selectedFeeTier / 10000}%</span>
-                </div>
-              )}
-              {gasEstimate !== '0' && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Est. Gas</span>
-                  <span className="font-medium">{parseInt(gasEstimate).toLocaleString()}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Settings Dialog */}
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="sm" className="w-full mb-4">
-                  <Settings className="w-4 h-4 mr-2" />
-                  Swap Settings
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="glass-card">
-                <DialogHeader>
-                  <DialogTitle>Swap Settings</DialogTitle>
-                  <DialogDescription>Configure your swap preferences</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">
-                      Slippage Tolerance: {slippage}%
-                    </label>
-                    <Slider
-                      value={[slippage]}
-                      onValueChange={(value) => setSlippage(value[0])}
-                      max={10}
-                      min={0.1}
-                      step={0.1}
-                    />
-                    <div className="flex gap-2 mt-2">
-                      {[0.5, 1, 2, 5].map((val) => (
-                        <Button
-                          key={val}
-                          variant={slippage === val ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setSlippage(val)}
-                        >
-                          {val}%
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            {/* Info Banner */}
-            <div className="glass-card p-4 rounded-lg mb-6 flex items-start gap-3">
-              <Info className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-muted-foreground">
-                {networkMode === 'testnet' 
-                  ? 'You are on testnet. Tokens have no real value.'
-                  : 'Swaps are executed on mainnet. Please verify all details.'}
-              </p>
-            </div>
-
-            {/* Connection Status */}
-            {!isConnected && (
-              <div className="glass-card p-4 rounded-lg mb-6 flex items-center justify-center gap-2 border border-yellow-500/30">
-                <Info className="w-5 h-5 text-yellow-500" />
-                <p className="text-sm text-yellow-500">Connect your wallet to swap tokens</p>
-              </div>
-            )}
-
-            {/* Swap Button */}
-            <Button
-              onClick={handleSwap}
-              disabled={isSwapping || !amount || !isConnected || !selectedChain}
-              className="w-full text-lg py-6 glow-border"
-            >
-              {isSwapping ? (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Swapping...
-                </>
-              ) : !isConnected ? (
-                'Connect Wallet'
-              ) : (
-                'Swap Tokens'
-              )}
-            </Button>
-
-            {/* Transaction Hash */}
-            {txHash && selectedChain && (
-              <div className="mt-4 glass-card p-4 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Transaction Hash:</span>
-                  <a
-                    href={`${selectedChain.explorer}/tx/${txHash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-primary hover:underline inline-flex items-center gap-1 font-mono"
-                  >
-                    {txHash.substring(0, 10)}...{txHash.substring(txHash.length - 8)}
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-              </div>
-            )}
-
-            {/* Explorer Link */}
-            {selectedChain && (
-              <div className="mt-4 text-center">
-                <a
-                  href={selectedChain.explorer}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-muted-foreground hover:text-primary inline-flex items-center gap-1"
-                >
-                  View on Explorer
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
-            )}
-          </motion.div>
-
-          {/* Supported Networks */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="mt-8 glass-card p-6 rounded-xl"
-          >
-            <h3 className="text-lg font-semibold mb-4">
-              Supported {networkMode === 'mainnet' ? 'Mainnet' : 'Testnet'} Networks
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {chains.map((chain) => (
-                <div 
-                  key={chain.chainId}
-                  className={`glass-card p-3 rounded-lg text-center cursor-pointer transition-all hover:scale-105 ${
-                    selectedChain?.chainId === chain.chainId ? 'ring-2 ring-primary' : ''
-                  }`}
-                  onClick={() => setSelectedChain(chain)}
-                >
-                  <div className="font-medium text-sm">{chain.name}</div>
-                  <div className="text-xs text-muted-foreground">{chain.symbol}</div>
-                  <div className="text-xs text-muted-foreground mt-1">Uniswap V3</div>
-                </div>
-              ))}
-            </div>
-          </motion.div>
+// ── Route Card ────────────────────────────────────────────────────────────────
+interface RouteCardProps {
+  route: RubicRoute;
+  dstSymbol: string;
+  selected: boolean;
+  onSelect: () => void;
+  isBest: boolean;
+}
+function RouteCard({ route, dstSymbol, selected, onSelect, isBest }: RouteCardProps) {
+  const tags = route.tags ?? [];
+  const fees = (route.fees ?? []).filter(f => f.percent > 0);
+  const time = route.estimatedTime as number | undefined;
+  const usd  = route.toAmountUsd as number | undefined;
+  const impact = route.priceImpact as number | null | undefined;
+  return (
+    <button
+      onClick={onSelect}
+      className={`w-full text-left p-4 rounded-xl border transition-all ${
+        selected
+          ? 'border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20'
+          : 'border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20'
+      }`}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-semibold text-sm">{formatProvider(route.provider)}</span>
+          {isBest && <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs py-0">Best</Badge>}
+          {(tags as string[]).map(t => (
+            <Badge key={t} variant="outline" className="text-xs border-white/20 text-gray-400 py-0">{t}</Badge>
+          ))}
+        </div>
+        <div className="text-right">
+          <div className="text-blue-400 font-bold text-base">{fmtAmt(route.toAmount)} {dstSymbol}</div>
+          {usd != null && usd > 0 && <div className="text-xs text-gray-400">≈ ${usd.toFixed(2)}</div>}
         </div>
       </div>
+      <div className="flex items-center gap-4 text-xs text-gray-400">
+        {route.toAmountMin && (
+          <span className="flex items-center gap-1">
+            <TrendingUp className="w-3 h-3" />Min: {fmtAmt(route.toAmountMin)} {dstSymbol}
+          </span>
+        )}
+        {time != null && (
+          <span className="flex items-center gap-1">
+            <Clock className="w-3 h-3" />{time < 60 ? `${time}s` : `${Math.round(time / 60)}m`}
+          </span>
+        )}
+        {impact != null && (
+          <span className={impact < 0 ? 'text-red-400' : 'text-green-400'}>
+            {impact > 0 ? '+' : ''}{impact.toFixed(2)}% impact
+          </span>
+        )}
+        {fees.length > 0 && (
+          <span className="flex items-center gap-1">
+            Fee: {fees.map(f => `${f.percent}% ${f.tokenSymbol}`).join(' + ')}
+          </span>
+        )}
+        <Badge variant="outline" className="text-xs border-white/20 text-gray-400 py-0 ml-auto">
+          {route.type === 'cross-chain' ? 'Cross-Chain' : 'On-Chain'}
+        </Badge>
+      </div>
+    </button>
+  );
+}
 
+// ── Main Swap Component ───────────────────────────────────────────────────────
+export default function Swap() {
+  const { toast } = useToast();
+  const { address: walletAddress } = useWallet();
+
+  const [showTestnets, setShowTestnets] = useState(false);
+  const [chains, setChains] = useState<RubicChain[]>([]);
+  const [chainsLoading, setChainsLoading] = useState(true);
+  const [srcChain, setSrcChain] = useState<RubicChain | null>(null);
+  const [dstChain, setDstChain] = useState<RubicChain | null>(null);
+  const [srcToken, setSrcToken] = useState<RubicToken | null>(null);
+  const [dstToken, setDstToken] = useState<RubicToken | null>(null);
+
+  const [srcAmount, setSrcAmount] = useState('');
+  const [routes, setRoutes] = useState<RubicRoute[]>([]);
+  const [selectedRoute, setSelectedRoute] = useState<RubicRoute | null>(null);
+  const [quotesLoading, setQuotesLoading] = useState(false);
+  const [quotesError, setQuotesError] = useState('');
+
+  const [swapLoading, setSwapLoading] = useState(false);
+  const [txHash, setTxHash] = useState('');
+  const [txStatus, setTxStatus] = useState('');
+
+  // Load chains
+  useEffect(() => {
+    let cancelled = false;
+    setChainsLoading(true);
+    rubicSwapService.getChains(showTestnets)
+      .then(list => {
+        if (!cancelled) {
+          const evm = list.filter(c => c.type === 'EVM' || !c.type);
+          setChains(evm);
+          setSrcChain(null); setDstChain(null);
+          setSrcToken(null); setDstToken(null);
+        }
+      })
+      .catch(err => {
+        if (!cancelled)
+          toast({ title: 'Failed to load chains', description: err.message, variant: 'destructive' });
+      })
+      .finally(() => { if (!cancelled) setChainsLoading(false); });
+    return () => { cancelled = true; };
+  }, [showTestnets]);
+
+  useEffect(() => { setSrcToken(null); }, [srcChain]);
+  useEffect(() => { setDstToken(null); }, [dstChain]);
+  useEffect(() => {
+    setRoutes([]); setSelectedRoute(null); setQuotesError('');
+  }, [srcChain, dstChain, srcToken, dstToken, srcAmount]);
+
+  // Fetch routes
+  const fetchRoutes = useCallback(async () => {
+    if (!srcChain || !dstChain || !srcToken || !dstToken || !srcAmount) {
+      toast({ title: 'Please fill all fields', variant: 'destructive' });
+      return;
+    }
+    const amt = parseFloat(srcAmount);
+    if (isNaN(amt) || amt <= 0) {
+      toast({ title: 'Invalid amount', variant: 'destructive' });
+      return;
+    }
+    setQuotesLoading(true);
+    setQuotesError('');
+    setRoutes([]);
+    setSelectedRoute(null);
+    try {
+      const allRoutes = await rubicSwapService.getQuoteAll({
+        srcTokenAddress: srcToken.address,
+        srcTokenBlockchain: srcChain.blockchainName,
+        dstTokenAddress: dstToken.address,
+        dstTokenBlockchain: dstChain.blockchainName,
+        srcTokenAmount: srcAmount,
+      });
+      if (allRoutes.length === 0) {
+        setQuotesError('No routes found for this token pair. Try a different amount or pair.');
+      } else {
+        setRoutes(allRoutes);
+        setSelectedRoute(allRoutes[0]);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to fetch routes';
+      setQuotesError(msg);
+    } finally {
+      setQuotesLoading(false);
+    }
+  }, [srcChain, dstChain, srcToken, dstToken, srcAmount, toast]);
+
+  // Execute swap
+  const executeSwap = useCallback(async () => {
+    if (!selectedRoute || !srcChain || !dstChain || !srcToken || !dstToken || !walletAddress) {
+      toast({ title: 'Connect wallet and select a route first', variant: 'destructive' });
+      return;
+    }
+    const win = window as Window & typeof globalThis & { ethereum?: unknown };
+    if (!win.ethereum) {
+      toast({ title: 'No wallet found', description: 'Please install MetaMask or a compatible wallet.', variant: 'destructive' });
+      return;
+    }
+    setSwapLoading(true);
+    setTxHash('');
+    setTxStatus('');
+    try {
+      const provider = new ethers.BrowserProvider(win.ethereum as ethers.Eip1193Provider);
+      const signer = await provider.getSigner();
+
+      const swapData = await rubicSwapService.getSwapData({
+        srcTokenAddress: srcToken.address,
+        srcTokenBlockchain: srcChain.blockchainName,
+        dstTokenAddress: dstToken.address,
+        dstTokenBlockchain: dstChain.blockchainName,
+        srcTokenAmount: srcAmount,
+        id: selectedRoute.id,
+        fromAddress: walletAddress,
+        receiverAddress: walletAddress,
+      });
+      const tx = swapData.transaction;
+
+      // ERC-20 approval if needed
+      if (srcToken.address !== NATIVE_ADDRESS && tx.to) {
+        const tokenContract = new ethers.Contract(srcToken.address, ERC20_ABI, signer);
+        const srcAmtBig = ethers.parseUnits(srcAmount, srcToken.decimals);
+        const allowance: bigint = await tokenContract.allowance(walletAddress, tx.to) as bigint;
+        if (allowance < srcAmtBig) {
+          toast({ title: 'Approving token...', description: 'Please confirm in wallet' });
+          const approveTx = await tokenContract.approve(tx.to, srcAmtBig);
+          await (approveTx as { wait: () => Promise<unknown> }).wait();
+          toast({ title: 'Approval confirmed', description: 'Proceeding to swap...' });
+        }
+      }
+
+      toast({ title: 'Confirm swap in your wallet' });
+      const txResponse = await signer.sendTransaction({
+        to: tx.to,
+        data: tx.data,
+        value: tx.value ? BigInt(tx.value) : 0n,
+      });
+      setTxHash(txResponse.hash);
+      toast({ title: 'Swap submitted!', description: `Tx: ${txResponse.hash.slice(0, 10)}...` });
+      await txResponse.wait(1);
+      setTxStatus('confirmed');
+      toast({ title: 'Swap confirmed!', description: 'Transaction mined successfully.' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Swap failed';
+      toast({ title: 'Swap failed', description: msg, variant: 'destructive' });
+    } finally {
+      setSwapLoading(false);
+    }
+  }, [selectedRoute, srcChain, dstChain, srcToken, dstToken, srcAmount, walletAddress, toast]);
+
+  const swapDirection = () => {
+    const tmpChain = srcChain; const tmpToken = srcToken;
+    setSrcChain(dstChain); setSrcToken(dstToken);
+    setDstChain(tmpChain); setDstToken(tmpToken);
+    setSrcAmount(''); setRoutes([]); setSelectedRoute(null);
+  };
+
+  const canGetRoutes = !!(srcChain && dstChain && srcToken && dstToken && srcAmount && parseFloat(srcAmount) > 0);
+  const canSwap = !!(selectedRoute && walletAddress && !swapLoading);
+
+  return (
+    <div className="min-h-screen bg-gray-950 text-white flex flex-col">
+      <Navbar />
+      <main className="flex-1 container mx-auto max-w-2xl px-4 py-10">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+
+          {/* Header */}
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                Token Swap
+              </h1>
+              <p className="text-gray-400 text-sm mt-1">Swap tokens across any chain via Rubic</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="testnet-toggle" className="text-gray-400 text-xs cursor-pointer">Testnets</Label>
+              <Switch id="testnet-toggle" checked={showTestnets} onCheckedChange={setShowTestnets} />
+            </div>
+          </div>
+
+          {/* Swap Card */}
+          <div className="bg-gray-900 rounded-2xl border border-white/10 p-6 shadow-xl">
+            {chainsLoading ? (
+              <div className="flex flex-col items-center gap-3 py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
+                <p className="text-gray-400 text-sm">Loading supported chains...</p>
+              </div>
+            ) : (
+              <>
+                {/* From */}
+                <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs text-gray-400 font-medium uppercase tracking-wide">From</span>
+                    <ChainSelector chains={chains} selected={srcChain} onSelect={setSrcChain} label="Select Chain" />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder="0.0"
+                      value={srcAmount}
+                      onChange={e => setSrcAmount(e.target.value)}
+                      className="flex-1 bg-transparent border-none text-2xl font-bold focus-visible:ring-0 p-0 h-auto placeholder:text-gray-600"
+                    />
+                    {srcChain ? (
+                      <TokenPicker blockchain={srcChain.blockchainName} selected={srcToken} onSelect={setSrcToken} label="Token" />
+                    ) : (
+                      <span className="text-sm text-gray-600 italic">Select chain first</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Swap direction */}
+                <div className="flex justify-center -my-1 relative z-10">
+                  <button
+                    onClick={swapDirection}
+                    className="bg-gray-800 border border-white/10 hover:bg-gray-700 rounded-full p-2 transition-colors"
+                  >
+                    <ArrowDownUp className="w-4 h-4 text-gray-400" />
+                  </button>
+                </div>
+
+                {/* To */}
+                <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs text-gray-400 font-medium uppercase tracking-wide">To</span>
+                    <ChainSelector chains={chains} selected={dstChain} onSelect={setDstChain} label="Select Chain" />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 text-2xl font-bold text-gray-500">
+                      {selectedRoute ? fmtAmt(selectedRoute.toAmount) : '\u2014'}
+                    </div>
+                    {dstChain ? (
+                      <TokenPicker blockchain={dstChain.blockchainName} selected={dstToken} onSelect={setDstToken} label="Token" />
+                    ) : (
+                      <span className="text-sm text-gray-600 italic">Select chain first</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Get Routes */}
+                <Button
+                  onClick={fetchRoutes}
+                  disabled={!canGetRoutes || quotesLoading}
+                  className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl disabled:opacity-40"
+                >
+                  {quotesLoading ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Fetching Routes...
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4" /> Get Routes
+                    </span>
+                  )}
+                </Button>
+
+                {quotesError && (
+                  <div className="mt-3 flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-400">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>{quotesError}</span>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Routes */}
+          {routes.length > 0 && (
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mt-6">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold">Available Routes</h2>
+                <Badge variant="outline" className="border-white/20 text-gray-400">
+                  {routes.length} route{routes.length !== 1 ? 's' : ''}
+                </Badge>
+              </div>
+              <div className="space-y-3">
+                {routes.map((r, i) => (
+                  <RouteCard
+                    key={r.id}
+                    route={r}
+                    dstSymbol={dstToken?.symbol ?? ''}
+                    selected={selectedRoute?.id === r.id}
+                    onSelect={() => setSelectedRoute(r)}
+                    isBest={i === 0}
+                  />
+                ))}
+              </div>
+
+              {/* Selected route summary */}
+              {selectedRoute && (
+                <div className="mt-4 bg-gray-900 rounded-xl border border-white/10 p-4 text-sm space-y-2">
+                  <div className="font-medium text-gray-300 mb-1 flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-yellow-400" /> Swap Summary
+                  </div>
+                  <div className="flex justify-between text-gray-400">
+                    <span>Provider</span>
+                    <span className="text-white">{formatProvider(selectedRoute.provider)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-400">
+                    <span>You Send</span>
+                    <span className="text-white">{srcAmount} {srcToken?.symbol}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-400">
+                    <span>You Receive (est.)</span>
+                    <span className="text-green-400 font-semibold">{fmtAmt(selectedRoute.toAmount)} {dstToken?.symbol}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-400">
+                    <span>Minimum Received</span>
+                    <span className="text-white">{fmtAmt(selectedRoute.toAmountMin)} {dstToken?.symbol}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-400">
+                    <span>Route Type</span>
+                    <Badge variant="outline" className="text-xs border-white/20 text-gray-300">
+                      {selectedRoute.type === 'cross-chain' ? 'Cross-Chain' : 'On-Chain'}
+                    </Badge>
+                  </div>
+                </div>
+              )}
+
+              {/* Swap button */}
+              <Button
+                onClick={executeSwap}
+                disabled={!canSwap}
+                className="w-full mt-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-4 text-base rounded-xl disabled:opacity-40"
+              >
+                {swapLoading ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="w-5 h-5 animate-spin" /> Processing Swap...
+                  </span>
+                ) : !walletAddress ? (
+                  'Connect Wallet to Swap'
+                ) : (
+                  `Swap via ${selectedRoute ? formatProvider(selectedRoute.provider) : '\u2014'}`
+                )}
+              </Button>
+
+              {/* Tx result */}
+              {txHash && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className={`mt-4 flex items-start gap-3 rounded-xl p-4 border text-sm ${
+                    txStatus === 'confirmed'
+                      ? 'bg-green-500/10 border-green-500/30 text-green-400'
+                      : 'bg-blue-500/10 border-blue-500/30 text-blue-400'
+                  }`}
+                >
+                  {txStatus === 'confirmed'
+                    ? <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
+                    : <Loader2 className="w-5 h-5 animate-spin flex-shrink-0" />
+                  }
+                  <div>
+                    <p className="font-semibold">
+                      {txStatus === 'confirmed' ? 'Swap Confirmed!' : 'Transaction Pending...'}
+                    </p>
+                    <a
+                      href={getExplorerTxUrl(srcChain?.blockchainName, txHash)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline flex items-center gap-1 mt-1 opacity-80 hover:opacity-100 text-xs"
+                    >
+                      {txHash.slice(0, 12)}...{txHash.slice(-8)} <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                </motion.div>
+              )}
+            </motion.div>
+          )}
+
+          {!walletAddress && (
+            <p className="text-center text-gray-500 text-sm mt-6">
+              Connect your wallet to execute swaps. Quotes are available without a wallet.
+            </p>
+          )}
+        </motion.div>
+      </main>
       <Footer />
     </div>
   );
-};
-
-export default Swap;
+}

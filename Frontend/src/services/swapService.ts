@@ -1,234 +1,177 @@
-const API_BASE_URL = 'http://localhost:3001';
+﻿const API_BASE_URL = 'http://localhost:3001';
 
-export interface ChainConfig {
-  chainId: number;
-  name: string;
-  symbol: string;
-  type: 'mainnet' | 'testnet';
-  dexes: string[];
-  explorer: string;
-  wrappedNative: string;
-  stablecoins: Record<string, string>;
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface RubicChain {
+  id: number | null;          // numeric chain ID (e.g. 1 for ETH, 137 for POLYGON)
+  blockchainName: string;     // Rubic name, e.g. "ETH", "POLYGON"
+  displayName: string;
+  type: string;               // "EVM", "SOLANA", "TRON", etc.
+  proxyAvailable: boolean;
+  testnet: boolean;
+  providers: {
+    crossChain: string[];
+    onChain: string[];
+  };
 }
 
-export interface Token {
+export interface RubicToken {
   symbol: string;
-  name?: string;
-  address: string;
+  address: string;            // native = 0x0000000000000000000000000000000000000000
   decimals: number;
+  name: string;
+  image: string | null;
+  rank: number;
 }
 
-export interface TokensResponse {
-  success: boolean;
-  chainId: number;
-  network: string;
-  tokens: Record<string, Token>;
+/** A single swap route returned by Rubic quoteAll / quoteBest, normalized by the backend */
+export interface RubicRoute {
+  id: string;
+  type: string;               // "on-chain" | "cross-chain"  (from swapType)
+  provider: string;           // e.g. "UNI_SWAP_V3", "ODOS", "STARGATE" (from providerType)
+  fromAmount: string;         // source amount (human-readable)
+  toAmount: string;           // estimated destination amount (from estimate.destinationTokenAmount)
+  toAmountMin: string;        // minimum with slippage (from estimate.destinationTokenMinAmount)
+  toAmountUsd: number;        // estimated USD value of output
+  priceImpact: number | null; // percent price impact
+  estimatedTime?: number;     // seconds (durationInMinutes * 60)
+  fees: {
+    nativeTokenAddress: string;
+    percent: number;
+    tokenSymbol: string;
+  }[];
+  tags?: string[];
+  transaction?: unknown;      // raw swap tx data (populated by /routes/swap)
+  useRubicContract?: boolean;
+  [key: string]: unknown;
 }
 
-export interface AccountInfo {
-  address: string;
-  balance: string;
-  balanceWei: string;
-  network: string;
-  chainId: number;
-  symbol: string;
-  blockNumber: number;
+/** Transaction data returned by rubic swap endpoint */
+export interface RubicTransactionData {
+  data: string;               // hex encoded calldata
+  to: string;                 // contract address
+  value: string;              // native token value (wei as string)
 }
 
-export interface PoolDetails {
-  address: string;
-  fee: number;
-  sqrtPriceX96: string;
-  tick: number;
-  liquidity: string;
-  token0: string;
-  token1: string;
-  exists: boolean;
+export interface QuoteAllParams {
+  srcTokenAddress: string;
+  srcTokenBlockchain: string;
+  dstTokenAddress: string;
+  dstTokenBlockchain: string;
+  srcTokenAmount: string;
 }
 
-export interface QuoteDetails {
-  fee: number;
-  amountOut: string;
-  gasEstimate: string;
+export interface SwapDataParams extends QuoteAllParams {
+  id: string;
+  fromAddress: string;
+  receiverAddress?: string;
 }
 
-export interface DetailedQuote {
-  success: boolean;
-  chainId: number;
-  network: string;
-  tokenIn: string;
-  tokenOut: string;
-  amountIn: string;
-  estimatedOutput: string;
-  feeTier: number;
-  gasEstimate?: string;
-  pools: PoolDetails[];
-  allQuotes: QuoteDetails[];
-  isWrapUnwrap?: boolean;
-  error?: string;
-}
+// ─── RubicSwapService ─────────────────────────────────────────────────────────
 
-export interface SwapPayload {
-  poolDetails: PoolDetails[];
-  quote: {
-    amountOut: string;
-    amountOutMin: string;
-    fee: number;
-    gasEstimate: string;
-    allQuotes: QuoteDetails[];
-  };
-  swapParams: {
-    tokenIn: string;
-    tokenOut: string;
-    fee: number;
-    amountIn: string;
-    amountOutMinimum: string;
-  };
-  deadline: number;
-  routerAddress: string;
-}
-
-class SwapService {
+class RubicSwapService {
   private baseUrl: string;
 
   constructor(baseUrl: string = API_BASE_URL) {
     this.baseUrl = baseUrl;
   }
 
-  async getChains(mode?: 'mainnet' | 'testnet'): Promise<ChainConfig[]> {
-    const url = mode 
-      ? `${this.baseUrl}/api/swap/chains?mode=${mode}`
-      : `${this.baseUrl}/api/swap/chains`;
-    
-    const response = await fetch(url);
-    const data = await response.json();
-    
-    if (data.success) {
-      return data.chains;
-    }
-    throw new Error(data.error || 'Failed to fetch chains');
+  // ── Chains ──────────────────────────────────────────────────────────────────
+
+  /** Fetch all supported chains from Rubic API via the backend proxy */
+  async getChains(includeTestnets = false): Promise<RubicChain[]> {
+    const url = `${this.baseUrl}/api/rubic/chains${includeTestnets ? '?testnet=true' : ''}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to fetch chains');
+    return data.chains as RubicChain[];
   }
 
-  async getTokens(chainId: number): Promise<TokensResponse> {
-    const response = await fetch(`${this.baseUrl}/api/swap/tokens/${chainId}`);
-    const data = await response.json();
-    
-    if (data.success) {
-      return data;
-    }
-    throw new Error(data.error || 'Failed to fetch tokens');
+  // ── Tokens ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Fetch tokens for a blockchain, optionally filtering by symbol search.
+   * Calls the Rubic Token API via the backend proxy.
+   */
+  async getTokens(
+    blockchain: string,
+    search = '',
+    page = 1,
+    pageSize = 50,
+  ): Promise<RubicToken[]> {
+    const params = new URLSearchParams({
+      page: String(page),
+      pageSize: String(pageSize),
+    });
+    if (search) params.set('search', search);
+    const url = `${this.baseUrl}/api/rubic/tokens/${blockchain.toUpperCase()}?${params}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to fetch tokens');
+    return data.tokens as RubicToken[];
   }
 
-  async getAccountInfo(chainId: number, address: string): Promise<AccountInfo> {
-    const response = await fetch(`${this.baseUrl}/api/swap/account/${chainId}/${address}`);
-    const data = await response.json();
-    
-    if (data.success) {
-      return data.account;
-    }
-    throw new Error(data.error || 'Failed to fetch account info');
-  }
+  // ── Quotes ──────────────────────────────────────────────────────────────────
 
-  // Step 1: Get Pool Details
-  async getPoolDetails(chainId: number, tokenIn: string, tokenOut: string): Promise<PoolDetails[]> {
-    const response = await fetch(`${this.baseUrl}/api/swap/pool-details`, {
+  /** Fetches ALL available swap routes for the token pair / amount. */
+  async getQuoteAll(params: QuoteAllParams): Promise<RubicRoute[]> {
+    const res = await fetch(`${this.baseUrl}/api/rubic/quote-all`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chainId, tokenIn, tokenOut })
+      body: JSON.stringify(params),
     });
-    const data = await response.json();
-    
-    if (data.success) {
-      return data.pools;
-    }
-    throw new Error(data.error || 'Failed to fetch pool details');
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to fetch routes');
+    return data.routes as RubicRoute[];
   }
 
-  // Step 2: Get Detailed Quote
-  async getDetailedQuote(
-    chainId: number,
-    tokenIn: string,
-    tokenOut: string,
-    amountIn: string,
-    fromDecimals: number,
-    toDecimals: number
-  ): Promise<DetailedQuote> {
-    const response = await fetch(`${this.baseUrl}/api/swap/quote-detailed`, {
+  /** Fetches the single best swap route. */
+  async getQuoteBest(params: QuoteAllParams): Promise<RubicRoute> {
+    const res = await fetch(`${this.baseUrl}/api/rubic/quote-best`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chainId,
-        tokenIn,
-        tokenOut,
-        amountIn,
-        fromDecimals,
-        toDecimals
-      })
+      body: JSON.stringify(params),
     });
-    const data = await response.json();
-    
-    if (data.success) {
-      return data;
-    }
-    throw new Error(data.error || 'Failed to fetch detailed quote');
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to fetch best route');
+    return data.route as RubicRoute;
   }
 
-  // Step 3: Create Swap Payload
-  async createSwapPayload(
-    chainId: number,
-    tokenIn: string,
-    tokenOut: string,
-    amountIn: string,
-    fromDecimals: number,
-    slippagePercent: number = 5
-  ): Promise<SwapPayload> {
-    const response = await fetch(`${this.baseUrl}/api/swap/create-payload`, {
+  // ── Swap execution ───────────────────────────────────────────────────────────
+
+  /** Fetches the swap transaction data for a selected route. */
+  async getSwapData(params: SwapDataParams): Promise<{ transaction: RubicTransactionData }> {
+    const res = await fetch(`${this.baseUrl}/api/rubic/swap-data`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chainId,
-        tokenIn,
-        tokenOut,
-        amountIn,
-        fromDecimals,
-        slippagePercent
-      })
+      body: JSON.stringify(params),
     });
-    const data = await response.json();
-    
-    if (data.success) {
-      return data.payload;
-    }
-    throw new Error(data.error || 'Failed to create swap payload');
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to get swap data');
+    return data.data as { transaction: RubicTransactionData };
   }
 
-  // Get token balance for a specific user
-  async getTokenBalance(
-    chainId: number,
-    tokenAddress: string,
-    userAddress: string
-  ): Promise<{ balance: string; decimals: number; symbol: string }> {
-    const response = await fetch(`${this.baseUrl}/api/swap/token-balance`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chainId, tokenAddress, userAddress })
-    });
-    const data = await response.json();
-    
-    if (data.success) {
-      return {
-        balance: data.balance,
-        decimals: data.decimals,
-        symbol: data.symbol
-      };
-    }
-    throw new Error(data.error || 'Failed to fetch token balance');
+  // ── Cross-chain status ──────────────────────────────────────────────────────
+
+  async getCrossChainStatus(txHash: string, srcBlockchain: string): Promise<unknown> {
+    const res = await fetch(
+      `${this.baseUrl}/api/rubic/status/${txHash}?srcBlockchain=${srcBlockchain.toUpperCase()}`
+    );
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to get status');
+    return data.status;
   }
 
-  formatBalance(balance: string, decimals: number = 6): string {
-    const num = parseFloat(balance);
-    if (isNaN(num)) return '0';
-    return num.toFixed(decimals);
+  // ── Utilities ───────────────────────────────────────────────────────────────
+
+  isNativeToken(address: string): boolean {
+    return !address || address === '0x0000000000000000000000000000000000000000';
+  }
+
+  formatAmount(amount: string | number, decimals = 6): string {
+    const n = parseFloat(String(amount));
+    if (isNaN(n)) return '0';
+    return n.toFixed(decimals);
   }
 
   getExplorerTxUrl(explorer: string, txHash: string): string {
@@ -236,41 +179,6 @@ class SwapService {
   }
 }
 
-export const swapService = new SwapService();
-export { SwapService };
-
-export const CHAIN_IDS = {
-  ETHEREUM: 1,
-  POLYGON: 137,
-  ARBITRUM: 42161,
-  OPTIMISM: 10,
-  BASE: 8453,
-  SEPOLIA: 11155111,
-  ARBITRUM_SEPOLIA: 421614,
-  OPTIMISM_SEPOLIA: 11155420,
-  BASE_SEPOLIA: 84532,
-} as const;
-
-export const NETWORK_NAMES: Record<number, string> = {
-  1: 'Ethereum',
-  137: 'Polygon',
-  42161: 'Arbitrum One',
-  10: 'Optimism',
-  8453: 'Base',
-  11155111: 'Sepolia',
-  421614: 'Arbitrum Sepolia',
-  11155420: 'Optimism Sepolia',
-  84532: 'Base Sepolia',
-};
-
-export const NATIVE_SYMBOLS: Record<number, string> = {
-  1: 'ETH',
-  137: 'MATIC',
-  42161: 'ETH',
-  10: 'ETH',
-  8453: 'ETH',
-  11155111: 'ETH',
-  421614: 'ETH',
-  11155420: 'ETH',
-  84532: 'ETH',
-};
+// Singleton export
+export const rubicSwapService = new RubicSwapService();
+export { RubicSwapService };
