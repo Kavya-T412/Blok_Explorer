@@ -21,8 +21,8 @@ function extractRubicError(data, statusText) {
   if (Array.isArray(msg)) {
     return msg.map(m =>
       typeof m === 'string' ? m
-      : m?.constraints ? Object.values(m.constraints).join(', ')
-      : JSON.stringify(m)
+        : m?.constraints ? Object.values(m.constraints).join(', ')
+          : JSON.stringify(m)
     ).join('; ');
   }
   if (typeof msg === 'string' && msg) return msg;
@@ -41,7 +41,7 @@ async function rubicGet(path, params) {
   try { data = JSON.parse(text); }
   catch { throw new Error(`Non-JSON response from Rubic: ${text.substring(0, 200)}`); }
   if (!response.ok) {
-    throw new Error(`Rubic API error (${response.status}): ${extractRubicError(data, response.statusText)}`);
+    throw new Error(extractRubicError(data, response.statusText));
   }
   return data;
 }
@@ -58,7 +58,7 @@ async function rubicPost(path, body) {
   try { data = JSON.parse(text); }
   catch { throw new Error(`Non-JSON response from Rubic: ${text.substring(0, 200)}`); }
   if (!response.ok) {
-    throw new Error(`Rubic API error (${response.status}): ${extractRubicError(data, response.statusText)}`);
+    throw new Error(extractRubicError(data, response.statusText));
   }
   return data;
 }
@@ -78,7 +78,7 @@ function normalizeRoute(r, srcTokenAmount) {
     provider: r.providerType || r.provider || 'Unknown',
     type: r.swapType || r.type || 'on-chain',
     fromAmount: srcTokenAmount || r.tokens?.from?.amount || '0',
-    toAmount:    est.destinationTokenAmount    || r.toAmount    || '0',
+    toAmount: est.destinationTokenAmount || r.toAmount || '0',
     toAmountMin: est.destinationTokenMinAmount || r.toAmountMin || '0',
     toAmountUsd: est.destinationUsdAmount ?? 0,
     priceImpact: est.priceImpact ?? null,
@@ -90,7 +90,7 @@ function normalizeRoute(r, srcTokenAmount) {
     }] : [],
     tags: [],
     // preserve raw fields needed for swap execution
-    transaction:      r.transaction,
+    transaction: r.transaction,
     useRubicContract: r.useRubicContract,
   };
 }
@@ -119,7 +119,7 @@ class RubicSwapService {
       testnet: c.testnet || false,
       providers: {
         crossChain: c.providers?.crossChain || [],
-        onChain:    c.providers?.onChain    || [],
+        onChain: c.providers?.onChain || [],
       },
     }));
   }

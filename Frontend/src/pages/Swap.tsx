@@ -76,8 +76,8 @@ function SlippageDialog({ slippage, onChange, open, onOpenChange }: SlippageDial
               key={p.value}
               onClick={() => selectPreset(p.value)}
               className={`px-4 py-2 rounded-full text-sm font-semibold border transition-all ${isPresetActive(p.value)
-                  ? 'border-squid-primary bg-squid-primary text-white'
-                  : 'border-squid-border bg-white/20 dark:bg-white/5 hover:border-squid-primary/60 text-gray-600 dark:text-gray-300'
+                ? 'border-squid-primary bg-squid-primary text-white'
+                : 'border-squid-border bg-white/20 dark:bg-white/5 hover:border-squid-primary/60 text-gray-600 dark:text-gray-300'
                 }`}
             >
               {p.label}
@@ -551,7 +551,7 @@ export default function Swap() {
       setSelectedRoute(res[0]);
       setShowRoutes(true);
     } catch (err: any) {
-      toast({ title: 'Quote Error', description: err.message, variant: 'destructive' });
+      toast({ title: 'Quote Error', description: `We couldn't fetch swap routes: ${err.message}`, variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -623,7 +623,7 @@ export default function Swap() {
       setShowRoutes(false);
       setSrcAmount('');
     } catch (err: any) {
-      toast({ title: 'Swap failed', description: err.message, variant: 'destructive' });
+      toast({ title: 'Swap Process Stopped', description: `The transaction was interrupted: ${err.message}`, variant: 'destructive' });
     } finally {
       setLoading(false);
     }

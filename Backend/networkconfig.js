@@ -19,47 +19,8 @@ const ALCHEMY_ENDPOINTS = {
   43113: `https://avax-fuji.g.alchemy.com/v2/${ALCHEMY_API_KEY}`
 };
 
-// Uniswap V3 SwapRouter02 Addresses (only chains with Uniswap V3 support)
-const DEX_ROUTERS = {
-  // Mainnet - Uniswap V3 supported chains
-  1: { uniswapV3: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45' },
-  137: { uniswapV3: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45' },
-  42161: { uniswapV3: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45' },
-  10: { uniswapV3: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45' },
-  8453: { uniswapV3: '0x2626664c2603336E57B271c5C0b26F421741e481' },
-  // Chains without Uniswap V3 (BSC, Avalanche) - empty routers
-  56: {uniswapV3: '0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2'},
-  43114: {uniswapV3: '0xbb00FF08d01D300023C629E8fFfFcb65A5a578cE'},
-  // Testnet - Uniswap V3 supported
-  11155111: { uniswapV3: '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E' },
-  421614: { uniswapV3: '0x101F443B4d1b059569D643917553c771E1b9663E' },
-  11155420: { uniswapV3: '0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4' },
-  84532: { uniswapV3: '0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4' },
-  // Testnets without Uniswap V3 - empty routers
-  80002: {uniswapV3: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45'},
-  97: {uniswapV3 : '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'},
-  43113: {uniswapV3: '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7'}
-};
+// Quoter and Router information moved to Rubic API (swap.js)
 
-// Uniswap V3 Quoter V2 Addresses
-const UNISWAP_V3_QUOTER = {
-  // Mainnet
-  1: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e',
-  137: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e',
-  42161: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e',
-  10: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e',
-  8453: '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a',
-  56: '0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997', // PancakeSwap Quoter
-  43114: '0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F', // Trader Joe Quoter
-  // Testnet
-  11155111: '0xEd1f6473345F45b75F8179591dd5bA1888cf2FB3',
-  80002: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e',
-  97: '0xbC203d7f83677c7ed3F7acEc959963E7F4ECC5C2', // PancakeSwap Testnet Quoter
-  421614: '0xC5290058841028F1614F3A6F0F5816cAd0df5E27',
-  11155420: '0xC5290058841028F1614F3A6F0F5816cAd0df5E27',
-  84532: '0xC5290058841028F1614F3A6F0F5816cAd0df5E27',
-  43113: '0x5E325eDA8064b456f4781070C0738d849c824258' // Trader Joe Testnet Quoter
-};
 
 const WRAPPED_NATIVE = {
   // Mainnet
@@ -263,43 +224,10 @@ const NETWORK_CONFIGS = {
   }
 };
 
-function getNetworkConfig(chainId) {
-  return NETWORK_CONFIGS[chainId] || null;
-}
-
-function getDexRouter(chainId) {
-  const routers = DEX_ROUTERS[chainId];
-  return routers ? routers.uniswapV3 : null;
-}
-
-function getWrappedNativeToken(chainId) {
-  return WRAPPED_NATIVE[chainId] || null;
-}
-
-function getStablecoins(chainId) {
-  return STABLECOINS[chainId] || null;
-}
-
-function getQuoterAddress(chainId) {
-  return UNISWAP_V3_QUOTER[chainId] || null;
-}
-
-function getSupportedChains() {
-  return Object.keys(NETWORK_CONFIGS).map(Number);
-}
-
 module.exports = {
   ALCHEMY_API_KEY,
   ALCHEMY_ENDPOINTS,
-  DEX_ROUTERS,
-  UNISWAP_V3_QUOTER,
   WRAPPED_NATIVE,
   STABLECOINS,
-  NETWORK_CONFIGS,
-  getNetworkConfig,
-  getDexRouter,
-  getWrappedNativeToken,
-  getStablecoins,
-  getQuoterAddress,
-  getSupportedChains
+  NETWORK_CONFIGS
 };
