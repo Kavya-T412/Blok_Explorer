@@ -5,6 +5,31 @@ const REFERRER = 'rubic.exchange';
 
 // ---- Low-level helpers ------------------------------------------------------
 
+function extractRubicError(data, statusText) {
+  // Format: { error: { code, reason } }
+  if (data?.error && typeof data.error === 'object') {
+    return data.error.reason || data.error.message || JSON.stringify(data.error);
+  }
+  // Format: { error: "string" }
+  if (typeof data?.error === 'string' && data.error) return data.error;
+  // Format: { errors: [{ code, reason }] }
+  if (Array.isArray(data?.errors) && data.errors.length > 0) {
+    return data.errors.map(e => e.reason || e.message || JSON.stringify(e)).join('; ');
+  }
+  // Format: { message: string | string[] | object[] }
+  const msg = data?.message;
+  if (Array.isArray(msg)) {
+    return msg.map(m =>
+      typeof m === 'string' ? m
+      : m?.constraints ? Object.values(m.constraints).join(', ')
+      : JSON.stringify(m)
+    ).join('; ');
+  }
+  if (typeof msg === 'string' && msg) return msg;
+  if (msg != null && typeof msg === 'object') return JSON.stringify(msg);
+  return statusText || 'Unknown error';
+}
+
 async function rubicGet(path, params) {
   const qs = params
     ? '?' + new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString()
@@ -16,8 +41,7 @@ async function rubicGet(path, params) {
   try { data = JSON.parse(text); }
   catch { throw new Error(`Non-JSON response from Rubic: ${text.substring(0, 200)}`); }
   if (!response.ok) {
-    const msg = (Array.isArray(data?.message) ? data.message.join(', ') : data?.message) || data?.error || response.statusText;
-    throw new Error(`Rubic API error (${response.status}): ${msg}`);
+    throw new Error(`Rubic API error (${response.status}): ${extractRubicError(data, response.statusText)}`);
   }
   return data;
 }
@@ -34,8 +58,7 @@ async function rubicPost(path, body) {
   try { data = JSON.parse(text); }
   catch { throw new Error(`Non-JSON response from Rubic: ${text.substring(0, 200)}`); }
   if (!response.ok) {
-    const msg = (Array.isArray(data?.message) ? data.message.join(', ') : data?.message) || data?.error || response.statusText;
-    throw new Error(`Rubic API error (${response.status}): ${msg}`);
+    throw new Error(`Rubic API error (${response.status}): ${extractRubicError(data, response.statusText)}`);
   }
   return data;
 }
@@ -90,6 +113,7 @@ class RubicSwapService {
       id: c.id || null,
       blockchainName: c.name,
       displayName: c.name,
+      image: c.image || null,
       type: c.type || 'EVM',
       proxyAvailable: c.proxyAvailable || false,
       testnet: c.testnet || false,
@@ -184,6 +208,7 @@ class RubicSwapService {
       srcTokenAddress, srcTokenBlockchain,
       dstTokenAddress, dstTokenBlockchain,
       srcTokenAmount, id, fromAddress, receiverAddress,
+      slippage = 0.01,
     } = params;
     if (!id || !fromAddress) throw new Error('Route id and fromAddress are required');
     return rubicPost('/routes/swap', {
@@ -196,6 +221,7 @@ class RubicSwapService {
       id,
       fromAddress,
       receiverAddress: receiverAddress || fromAddress,
+      slippage: Number(slippage),
     });
   }
 

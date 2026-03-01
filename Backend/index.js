@@ -367,6 +367,7 @@ app.post('/api/rubic/swap-data', async (req, res) => {
       srcTokenAddress, srcTokenBlockchain,
       dstTokenAddress, dstTokenBlockchain,
       srcTokenAmount, id, fromAddress, receiverAddress,
+      slippage = 0.01,
     } = req.body;
 
     if (!srcTokenAddress || !srcTokenBlockchain || !dstTokenAddress || !dstTokenBlockchain || !srcTokenAmount || !id || !fromAddress) {
@@ -382,6 +383,7 @@ app.post('/api/rubic/swap-data', async (req, res) => {
       id,
       fromAddress,
       receiverAddress,
+      slippage: Number(slippage),
     });
 
     res.json({ success: true, data });

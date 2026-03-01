@@ -6,6 +6,7 @@ export interface RubicChain {
   id: number | null;          // numeric chain ID (e.g. 1 for ETH, 137 for POLYGON)
   blockchainName: string;     // Rubic name, e.g. "ETH", "POLYGON"
   displayName: string;
+  image: string | null;       // chain logo URL provided by Rubic API
   type: string;               // "EVM", "SOLANA", "TRON", etc.
   proxyAvailable: boolean;
   testnet: boolean;
@@ -51,6 +52,7 @@ export interface RubicTransactionData {
   data: string;               // hex encoded calldata
   to: string;                 // contract address
   value: string;              // native token value (wei as string)
+  approvalAddress?: string;   // spender to approve ERC-20 allowance for
 }
 
 export interface QuoteAllParams {
@@ -65,6 +67,8 @@ export interface SwapDataParams extends QuoteAllParams {
   id: string;
   fromAddress: string;
   receiverAddress?: string;
+  /** Slippage tolerance as decimal fraction, e.g. 0.01 = 1% (Rubic max 0.5). */
+  slippage?: number;
 }
 
 // ─── RubicSwapService ─────────────────────────────────────────────────────────

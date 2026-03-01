@@ -8,102 +8,39 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Deep space dark theme */
-    --background: 230 35% 7%;
-    --foreground: 210 40% 98%;
+    /* Squid Router Inspired Theme */
+    --squid-bg: 240 48% 94%;
+    --squid-card: 0 0% 100% / 0.8;
+    --squid-primary: 262 60% 75%;
+    /* Lavender/Purple */
+    --squid-primary-hover: 262 60% 70%;
+    --squid-text-primary: 220 30% 10%;
+    --squid-text-secondary: 220 15% 45%;
+    --squid-accent: 220 90% 50%;
+    --squid-border: 220 20% 90%;
 
-    --card: 230 30% 10%;
-    --card-foreground: 210 40% 98%;
+    --radius-squid: 2rem;
+    --radius-pill: 9999px;
 
-    --popover: 230 30% 10%;
-    --popover-foreground: 210 40% 98%;
-
-    /* Neon cyan primary */
-    --primary: 190 100% 50%;
-    --primary-foreground: 230 35% 7%;
-
-    /* Purple secondary */
-    --secondary: 270 60% 50%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 230 25% 15%;
-    --muted-foreground: 215 20% 65%;
-
-    /* Pink accent */
-    --accent: 320 85% 60%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 230 20% 20%;
-    --input: 230 25% 15%;
-    --ring: 190 100% 50%;
-
-    --radius: 0.75rem;
-    
-    /* Custom Web3 tokens */
-    --glass-bg: 230 30% 10% / 0.6;
-    --glass-border: 190 100% 50% / 0.2;
-    --glow-primary: 190 100% 50%;
-    --glow-secondary: 270 60% 50%;
-    --gradient-primary: linear-gradient(135deg, hsl(230 35% 7%) 0%, hsl(250 40% 12%) 50%, hsl(270 45% 15%) 100%);
-    --gradient-card: linear-gradient(135deg, hsl(230 30% 10% / 0.8) 0%, hsl(250 35% 12% / 0.6) 100%);
-
-    --sidebar-background: 0 0% 98%;
-
-    --sidebar-foreground: 240 5.3% 26.1%;
-
-    --sidebar-primary: 240 5.9% 10%;
-
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    /* Fallback for components using original variables */
+    --background: var(--squid-bg);
+    --foreground: var(--squid-text-primary);
+    --primary: var(--squid-primary);
+    --border: var(--squid-border);
   }
 
   .dark {
-    /* Same as root - dark by default */
-    --background: 230 35% 7%;
-    --foreground: 210 40% 98%;
+    --squid-bg: 230 35% 7%;
+    --squid-card: 230 30% 10% / 0.7;
+    --squid-primary: 262 50% 65%;
+    --squid-primary-hover: 262 50% 60%;
+    --squid-text-primary: 210 40% 98%;
+    --squid-text-secondary: 215 20% 65%;
+    --squid-accent: 190 100% 50%;
+    --squid-border: 230 20% 20%;
 
-    --card: 230 30% 10%;
-    --card-foreground: 210 40% 98%;
-
-    --popover: 230 30% 10%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 190 100% 50%;
-    --primary-foreground: 230 35% 7%;
-
-    --secondary: 270 60% 50%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 230 25% 15%;
-    --muted-foreground: 215 20% 65%;
-
-    --accent: 320 85% 60%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 230 20% 20%;
-    --input: 230 25% 15%;
-    --ring: 190 100% 50%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --background: var(--squid-bg);
+    --foreground: var(--squid-text-primary);
   }
 }
 
@@ -113,34 +50,88 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
-    background: linear-gradient(135deg, hsl(230 35% 7%) 0%, hsl(250 40% 12%) 50%, hsl(270 45% 15%) 100%);
-    background-attachment: fixed;
+    @apply bg-background text-foreground transition-colors duration-300;
+    min-height: 100vh;
+  }
+
+  /* Wavy Background Animation */
+  .squid-bg-wrapper {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    background: hsl(var(--squid-bg));
+    overflow: hidden;
+  }
+
+  .squid-wave {
+    position: absolute;
+    width: 200%;
+    height: 200%;
+    top: -50%;
+    left: -50%;
+    background: radial-gradient(circle at center, hsl(var(--squid-primary) / 0.15) 0%, transparent 70%);
+    animation: wave-rotate 20s linear infinite;
+  }
+
+  @keyframes wave-rotate {
+    from {
+      transform: rotate(0deg);
+    }
+
+    to {
+      transform: rotate(360deg);
+    }
   }
 }
 
 @layer utilities {
-  .glass-card {
-    @apply bg-card/60 backdrop-blur-xl border border-white/10;
-    box-shadow: 0 8px 32px 0 rgba(0, 212, 255, 0.1);
+  .squid-card {
+    @apply backdrop-blur-2xl border transition-all duration-500;
+    background: hsl(var(--squid-card));
+    border-color: hsl(var(--squid-border));
+    border-radius: var(--radius-squid);
+    box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.1);
   }
-  
-  .glass-card-hover {
-    @apply glass-card transition-all duration-300 hover:border-primary/30 hover:shadow-[0_8px_32px_0_rgba(0,212,255,0.2)];
+
+  .squid-card:hover {
+    box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.15);
   }
-  
-  .glow-text {
-    text-shadow: 0 0 20px hsl(var(--primary) / 0.5);
+
+  .squid-input-area {
+    @apply rounded-3xl p-6 transition-all border border-transparent;
+    background: hsl(var(--squid-text-primary) / 0.03);
   }
-  
-  .glow-border {
-    box-shadow: 0 0 20px hsl(var(--primary) / 0.3), inset 0 0 20px hsl(var(--primary) / 0.1);
+
+  .squid-input-area:focus-within {
+    border-color: hsl(var(--squid-primary) / 0.3);
+    background: hsl(var(--squid-text-primary) / 0.05);
   }
-  
-  .gradient-text {
-    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--secondary)));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+
+  .squid-peanut {
+    @apply flex items-center gap-1 p-1 pr-4 rounded-full border bg-white/50 dark:bg-black/20 backdrop-blur-md transition-all;
+    border-color: hsl(var(--squid-border));
+  }
+
+  .squid-peanut:hover {
+    border-color: hsl(var(--squid-primary) / 0.4);
+    background: hsl(var(--squid-text-primary) / 0.05);
+  }
+
+  .squid-btn-primary {
+    @apply w-full h-14 rounded-full font-bold text-lg transition-all transform active:scale-[0.98] flex items-center justify-center gap-2;
+    background: hsl(var(--squid-primary));
+    color: white;
+  }
+
+  .squid-btn-primary:hover:not(:disabled) {
+    background: hsl(var(--squid-primary-hover));
+    box-shadow: 0 8px 20px -6px hsl(var(--squid-primary) / 0.4);
+  }
+
+  .squid-btn-primary:disabled {
+    @apply opacity-50 cursor-not-allowed scale-100;
   }
 }

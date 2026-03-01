@@ -330,36 +330,37 @@ const GasEstimator = () => {
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                  <LineChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(156,163,175,0.3)" />
                     <XAxis 
                       dataKey="time" 
-                      stroke="rgba(255,255,255,0.5)"
-                      style={{ fontSize: '10px' }}
+                      stroke="#9ca3af"
+                      tick={{ fill: '#9ca3af', fontSize: 11 }}
                       interval="preserveStartEnd"
                       tickFormatter={(value, index) => {
-                        // Show fewer labels on small screens
                         if (chartData.length > 24 && index % 6 !== 0) return '';
                         return value;
                       }}
                     />
                     <YAxis 
-                      stroke="rgba(255,255,255,0.5)"
-                      style={{ fontSize: '12px' }}
-                      label={{ value: 'Gwei', angle: -90, position: 'insideLeft', fill: 'rgba(255,255,255,0.5)' }}
+                      stroke="#9ca3af"
+                      tick={{ fill: '#9ca3af', fontSize: 12 }}
+                      label={{ value: 'Gwei', angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 }}
+                      width={55}
                     />
                     <Tooltip 
                       contentStyle={{
-                        backgroundColor: 'rgba(15, 15, 30, 0.9)',
-                        border: '1px solid rgba(0, 212, 255, 0.2)',
+                        backgroundColor: '#1e1e2e',
+                        border: '1px solid rgba(99,102,241,0.4)',
                         borderRadius: '8px',
-                        backdropFilter: 'blur(12px)',
+                        color: '#f3f4f6',
                       }}
-                      labelStyle={{ color: '#fff' }}
+                      labelStyle={{ color: '#e5e7eb', fontWeight: 600 }}
+                      itemStyle={{ color: '#d1d5db' }}
                       formatter={(value: number) => [`${value.toFixed(3)} Gwei`, '']}
                     />
                     <Legend 
-                      wrapperStyle={{ fontSize: '14px' }}
+                      wrapperStyle={{ fontSize: '14px', color: '#9ca3af', paddingTop: '12px' }}
                       iconType="line"
                     />
                     <Line 

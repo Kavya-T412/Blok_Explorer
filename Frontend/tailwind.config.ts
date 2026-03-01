@@ -57,6 +57,18 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        squid: {
+          bg: "hsl(var(--squid-bg))",
+          card: "hsl(var(--squid-card))",
+          primary: "hsl(var(--squid-primary))",
+          "primary-hover": "hsl(var(--squid-primary-hover))",
+          text: {
+            primary: "hsl(var(--squid-text-primary))",
+            secondary: "hsl(var(--squid-text-secondary))",
+          },
+          accent: "hsl(var(--squid-accent))",
+          border: "hsl(var(--squid-border))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
