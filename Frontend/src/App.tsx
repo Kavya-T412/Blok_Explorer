@@ -25,6 +25,10 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            {/* Global animated background — same as Swap page */}
+            <div className="squid-bg-wrapper">
+              <div className="squid-wave" />
+            </div>
             <Routes>
               <Route path="/" element={<Landing />} />
               <Route path="/connect" element={<Connect />} />

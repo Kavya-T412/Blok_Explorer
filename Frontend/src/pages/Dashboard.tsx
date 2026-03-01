@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { useWallet } from '@/contexts/WalletContext';
 import { NetworkModeIndicator } from '@/components/NetworkModeToggle';
@@ -328,29 +328,46 @@ const Dashboard = () => {
                   <Filter className="w-4 h-4 text-muted-foreground" />
                   <label className="text-sm font-medium text-muted-foreground">Filter by Chain:</label>
                   <Select value={selectedChain} onValueChange={setSelectedChain}>
-                    <SelectTrigger className="w-[200px]">
+                    <SelectTrigger className="w-[200px] border border-white/20 bg-white/10 dark:bg-black/30 backdrop-blur-md text-foreground">
                       <SelectValue placeholder="Select chain" />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">
-                        <span className="font-semibold">All Chains</span>
-                        {transactions.length > 0 && (
-                          <span className="ml-2 text-xs text-muted-foreground">({transactions.length})</span>
-                        )}
-                      </SelectItem>
-                      {availableChains.map((chain) => {
-                        const count = getChainTransactionCount(chain);
-                        const chainStyle = getChainStyle(chain);
-                        return (
-                          <SelectItem key={chain} value={chain}>
-                            <span className="flex items-center gap-2">
-                              <span>{chainStyle.icon}</span>
-                              <span>{chain}</span>
-                              <span className="text-xs text-muted-foreground">({count})</span>
-                            </span>
-                          </SelectItem>
-                        );
-                      })}
+                    <SelectContent
+                      className="z-[200] max-h-72 overflow-y-auto rounded-xl border border-white/20 bg-[#1a1a2e] text-white shadow-2xl"
+                      style={{ backdropFilter: 'none' }}
+                    >
+                      <SelectGroup>
+                        <SelectLabel className="px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-purple-400">
+                          ── All Networks
+                        </SelectLabel>
+                        <SelectItem
+                          value="all"
+                          className="cursor-pointer rounded-lg py-2 text-sm text-white hover:bg-white/10 focus:bg-white/10 focus:text-white data-[state=checked]:text-purple-300"
+                        >
+                          <span className="font-semibold">All Chains</span>
+                          {transactions.length > 0 && (
+                            <span className="ml-2 text-xs text-white/50">({transactions.length})</span>
+                          )}
+                        </SelectItem>
+                        {availableChains.map((chain) => {
+                          const count = getChainTransactionCount(chain);
+                          const chainStyle = getChainStyle(chain);
+                          return (
+                            <SelectItem
+                              key={chain}
+                              value={chain}
+                              className="cursor-pointer rounded-lg py-2 text-sm text-white hover:bg-white/10 focus:bg-white/10 focus:text-white data-[state=checked]:text-purple-300"
+                            >
+                              <span className="flex items-center gap-2">
+                                <span>{chainStyle.icon}</span>
+                                <span>{chain}</span>
+                                {count > 0 && (
+                                  <span className="text-xs text-white/50">({count})</span>
+                                )}
+                              </span>
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                   {selectedChain !== 'all' && (

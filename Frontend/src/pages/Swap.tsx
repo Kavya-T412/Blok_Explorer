@@ -22,8 +22,8 @@ import { rubicSwapService, RubicChain, RubicToken, RubicRoute } from '@/services
 const SLIPPAGE_PRESETS = [
   { label: '0.1%', value: 0.001 },
   { label: '0.5%', value: 0.005 },  // default – best for most pairs
-  { label: '1%',   value: 0.01  },
-  { label: '3%',   value: 0.03  },
+  { label: '1%', value: 0.01 },
+  { label: '3%', value: 0.03 },
 ];
 const DEFAULT_SLIPPAGE = 0.005;
 
@@ -75,11 +75,10 @@ function SlippageDialog({ slippage, onChange, open, onOpenChange }: SlippageDial
             <button
               key={p.value}
               onClick={() => selectPreset(p.value)}
-              className={`px-4 py-2 rounded-full text-sm font-semibold border transition-all ${
-                isPresetActive(p.value)
+              className={`px-4 py-2 rounded-full text-sm font-semibold border transition-all ${isPresetActive(p.value)
                   ? 'border-squid-primary bg-squid-primary text-white'
                   : 'border-squid-border bg-white/20 dark:bg-white/5 hover:border-squid-primary/60 text-gray-600 dark:text-gray-300'
-              }`}
+                }`}
             >
               {p.label}
               {p.value === DEFAULT_SLIPPAGE && (
@@ -101,9 +100,8 @@ function SlippageDialog({ slippage, onChange, open, onOpenChange }: SlippageDial
               placeholder="e.g. 2.5"
               value={customInput}
               onChange={e => handleCustomChange(e.target.value)}
-              className={`pr-8 rounded-2xl bg-black/5 dark:bg-white/5 border transition-all focus-visible:ring-1 focus-visible:ring-squid-primary ${
-                customActive ? 'border-squid-primary' : 'border-squid-border'
-              }`}
+              className={`pr-8 rounded-2xl bg-black/5 dark:bg-white/5 border transition-all focus-visible:ring-1 focus-visible:ring-squid-primary ${customActive ? 'border-squid-primary' : 'border-squid-border'
+                }`}
             />
             <span className="absolute right-3 text-sm text-gray-400 pointer-events-none">%</span>
           </div>
@@ -638,9 +636,6 @@ export default function Swap() {
 
   return (
     <div className="relative min-h-screen font-sans selection:bg-squid-primary/30">
-      <div className="squid-bg-wrapper transition-opacity duration-1000">
-        <div className="squid-wave" />
-      </div>
 
       <Navbar />
 
@@ -744,8 +739,8 @@ export default function Swap() {
                           fontSize: previewAmount.length > 14
                             ? '1.5rem'
                             : previewAmount.length > 10
-                            ? '2rem'
-                            : '2.25rem',
+                              ? '2rem'
+                              : '2.25rem',
                         }}
                       >
                         {fmtAmt(previewAmount)}
