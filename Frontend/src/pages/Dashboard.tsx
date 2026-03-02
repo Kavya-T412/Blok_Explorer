@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
-import { TrendingUp, Activity, ArrowUpRight, RefreshCw, Wallet, AlertCircle, FileCode, Send, Code, ExternalLink, Search, X, Filter } from 'lucide-react';
+import { TrendingUp, ArrowUpRight, RefreshCw, Wallet, AlertCircle, FileCode, Send, Code, ExternalLink, Search, X, Filter } from 'lucide-react';
+import { getChainLogo } from '@/lib/chainLogos';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +15,27 @@ import { NetworkModeIndicator } from '@/components/NetworkModeToggle';
 import { blockchainService, Transaction } from '@/services/blockchainService';
 import { getCustomNetworks } from '@/types/customNetworks';
 import { useState, useMemo } from 'react';
+
+// ── Chain logo component ────────────────────────────────────────────────────
+const ChainLogoImg = ({ chainName, className = 'w-7 h-7' }: { chainName: string; className?: string }) => {
+  const [imgError, setImgError] = useState(false);
+  const logoUrl = getChainLogo(chainName);
+  if (!logoUrl || imgError) {
+    return (
+      <span className="text-white font-bold text-base select-none leading-none">
+        {chainName.charAt(0).toUpperCase()}
+      </span>
+    );
+  }
+  return (
+    <img
+      src={logoUrl}
+      alt={`${chainName} logo`}
+      className={`${className} rounded-full object-cover`}
+      onError={() => setImgError(true)}
+    />
+  );
+};
 
 const Dashboard = () => {
   const { address, isConnected } = useWallet();
@@ -130,6 +152,64 @@ const Dashboard = () => {
       'Avalanche': { gradient: 'from-red-600 to-orange-600', badge: 'bg-gradient-to-r from-red-600/30 to-orange-600/30 border-red-600/50 text-red-600 dark:text-red-200', icon: '❄' },
       'Avalanche C-Chain': { gradient: 'from-red-600 to-orange-600', badge: 'bg-gradient-to-r from-red-600/30 to-orange-600/30 border-red-600/50 text-red-600 dark:text-red-200', icon: '❄' },
       'Avalanche Fuji': { gradient: 'from-red-500 to-orange-500', badge: 'bg-gradient-to-r from-red-500/30 to-orange-500/30 border-red-500/50 text-red-600 dark:text-red-200', icon: '❄' },
+      // Fantom
+      'Fantom': { gradient: 'from-blue-400 to-cyan-500', badge: 'bg-gradient-to-r from-blue-400/30 to-cyan-500/30 border-blue-400/50 text-cyan-600 dark:text-cyan-200', icon: '👻' },
+      'Fantom Testnet': { gradient: 'from-blue-300 to-cyan-400', badge: 'bg-gradient-to-r from-blue-300/30 to-cyan-400/30 border-blue-300/50 text-cyan-600 dark:text-cyan-200', icon: '👻' },
+      // Gnosis
+      'Gnosis': { gradient: 'from-teal-500 to-green-500', badge: 'bg-gradient-to-r from-teal-500/30 to-green-500/30 border-teal-500/50 text-teal-600 dark:text-teal-200', icon: '🦉' },
+      'Chiado': { gradient: 'from-teal-400 to-green-400', badge: 'bg-gradient-to-r from-teal-400/30 to-green-400/30 border-teal-400/50 text-teal-600 dark:text-teal-200', icon: '🦉' },
+      // zkSync Era
+      'zkSync Era': { gradient: 'from-indigo-500 to-blue-600', badge: 'bg-gradient-to-r from-indigo-500/30 to-blue-600/30 border-indigo-500/50 text-indigo-600 dark:text-indigo-200', icon: '⚡' },
+      'zkSync Era Sepolia': { gradient: 'from-indigo-400 to-blue-500', badge: 'bg-gradient-to-r from-indigo-400/30 to-blue-500/30 border-indigo-400/50 text-indigo-600 dark:text-indigo-200', icon: '⚡' },
+      // Polygon zkEVM
+      'Polygon zkEVM': { gradient: 'from-violet-500 to-purple-600', badge: 'bg-gradient-to-r from-violet-500/30 to-purple-600/30 border-violet-500/50 text-violet-600 dark:text-violet-200', icon: '🟣' },
+      // Linea
+      'Linea': { gradient: 'from-gray-600 to-zinc-700', badge: 'bg-gradient-to-r from-gray-600/30 to-zinc-700/30 border-gray-500/50 text-gray-600 dark:text-gray-200', icon: '🔮' },
+      'Linea Sepolia': { gradient: 'from-gray-500 to-zinc-600', badge: 'bg-gradient-to-r from-gray-500/30 to-zinc-600/30 border-gray-400/50 text-gray-600 dark:text-gray-200', icon: '🔮' },
+      // Scroll
+      'Scroll': { gradient: 'from-amber-500 to-orange-500', badge: 'bg-gradient-to-r from-amber-500/30 to-orange-500/30 border-amber-500/50 text-amber-600 dark:text-amber-200', icon: '📜' },
+      'Scroll Sepolia': { gradient: 'from-amber-400 to-orange-400', badge: 'bg-gradient-to-r from-amber-400/30 to-orange-400/30 border-amber-400/50 text-amber-600 dark:text-amber-200', icon: '📜' },
+      // Mantle
+      'Mantle': { gradient: 'from-emerald-500 to-teal-600', badge: 'bg-gradient-to-r from-emerald-500/30 to-teal-600/30 border-emerald-500/50 text-emerald-600 dark:text-emerald-200', icon: '🌀' },
+      'Mantle Sepolia': { gradient: 'from-emerald-400 to-teal-500', badge: 'bg-gradient-to-r from-emerald-400/30 to-teal-500/30 border-emerald-400/50 text-emerald-600 dark:text-emerald-200', icon: '🌀' },
+      // Blast
+      'Blast': { gradient: 'from-yellow-400 to-amber-500', badge: 'bg-gradient-to-r from-yellow-400/30 to-amber-500/30 border-yellow-400/50 text-yellow-600 dark:text-yellow-200', icon: '💥' },
+      'Blast Sepolia': { gradient: 'from-yellow-300 to-amber-400', badge: 'bg-gradient-to-r from-yellow-300/30 to-amber-400/30 border-yellow-300/50 text-yellow-600 dark:text-yellow-200', icon: '💥' },
+      // Cronos
+      'Cronos': { gradient: 'from-blue-800 to-indigo-900', badge: 'bg-gradient-to-r from-blue-800/30 to-indigo-900/30 border-blue-800/50 text-blue-600 dark:text-blue-200', icon: '🔷' },
+      // Celo
+      'Celo': { gradient: 'from-emerald-400 to-lime-500', badge: 'bg-gradient-to-r from-emerald-400/30 to-lime-500/30 border-emerald-400/50 text-emerald-600 dark:text-emerald-200', icon: '🌿' },
+      'Celo Alfajores': { gradient: 'from-emerald-300 to-lime-400', badge: 'bg-gradient-to-r from-emerald-300/30 to-lime-400/30 border-emerald-300/50 text-emerald-600 dark:text-emerald-200', icon: '🌿' },
+      // Moonbeam
+      'Moonbeam': { gradient: 'from-pink-500 to-rose-600', badge: 'bg-gradient-to-r from-pink-500/30 to-rose-600/30 border-pink-500/50 text-pink-600 dark:text-pink-200', icon: '🌔' },
+      // Moonriver
+      'Moonriver': { gradient: 'from-orange-500 to-red-500', badge: 'bg-gradient-to-r from-orange-500/30 to-red-500/30 border-orange-500/50 text-orange-600 dark:text-orange-200', icon: '🌊' },
+      // Kava
+      'Kava': { gradient: 'from-red-500 to-pink-600', badge: 'bg-gradient-to-r from-red-500/30 to-pink-600/30 border-red-500/50 text-red-600 dark:text-red-200', icon: '🔴' },
+      // Metis
+      'Metis': { gradient: 'from-teal-400 to-cyan-500', badge: 'bg-gradient-to-r from-teal-400/30 to-cyan-500/30 border-teal-400/50 text-teal-600 dark:text-teal-200', icon: '🔵' },
+      // Aurora
+      'Aurora': { gradient: 'from-green-500 to-emerald-600', badge: 'bg-gradient-to-r from-green-500/30 to-emerald-600/30 border-green-500/50 text-green-600 dark:text-green-200', icon: '🌌' },
+      // Taiko
+      'Taiko': { gradient: 'from-rose-500 to-pink-600', badge: 'bg-gradient-to-r from-rose-500/30 to-pink-600/30 border-rose-500/50 text-rose-600 dark:text-rose-200', icon: '🥁' },
+      // Zora
+      'Zora': { gradient: 'from-purple-400 to-violet-500', badge: 'bg-gradient-to-r from-purple-400/30 to-violet-500/30 border-purple-400/50 text-purple-600 dark:text-purple-200', icon: '🎨' },
+      // Mode
+      'Mode': { gradient: 'from-lime-500 to-green-600', badge: 'bg-gradient-to-r from-lime-500/30 to-green-600/30 border-lime-500/50 text-lime-600 dark:text-lime-200', icon: '🟢' },
+      'Mode Sepolia': { gradient: 'from-lime-400 to-green-500', badge: 'bg-gradient-to-r from-lime-400/30 to-green-500/30 border-lime-400/50 text-lime-600 dark:text-lime-200', icon: '🟢' },
+      // Manta Pacific
+      'Manta Pacific': { gradient: 'from-sky-500 to-blue-600', badge: 'bg-gradient-to-r from-sky-500/30 to-blue-600/30 border-sky-500/50 text-sky-600 dark:text-sky-200', icon: '🌊' },
+      'Manta Sepolia': { gradient: 'from-sky-400 to-blue-500', badge: 'bg-gradient-to-r from-sky-400/30 to-blue-500/30 border-sky-400/50 text-sky-600 dark:text-sky-200', icon: '🌊' },
+      // Fraxtal
+      'Fraxtal': { gradient: 'from-gray-500 to-slate-600', badge: 'bg-gradient-to-r from-gray-500/30 to-slate-600/30 border-gray-500/50 text-gray-600 dark:text-gray-200', icon: '🔒' },
+      // Klaytn
+      'Klaytn': { gradient: 'from-orange-400 to-amber-500', badge: 'bg-gradient-to-r from-orange-400/30 to-amber-500/30 border-orange-400/50 text-orange-600 dark:text-orange-200', icon: '🟠' },
+      // IoTeX
+      'IoTeX': { gradient: 'from-teal-500 to-green-600', badge: 'bg-gradient-to-r from-teal-500/30 to-green-600/30 border-teal-500/50 text-teal-600 dark:text-teal-200', icon: '📡' },
+      // Boba
+      'Boba Network': { gradient: 'from-green-400 to-lime-500', badge: 'bg-gradient-to-r from-green-400/30 to-lime-500/30 border-green-400/50 text-green-600 dark:text-green-200', icon: '🟡' },
+      // Harmony
+      'Harmony': { gradient: 'from-blue-300 to-cyan-400', badge: 'bg-gradient-to-r from-blue-300/30 to-cyan-400/30 border-blue-300/50 text-cyan-600 dark:text-cyan-200', icon: '🔵' },
     };
 
     return chainStyles[chainName] || {
@@ -281,8 +361,8 @@ const Dashboard = () => {
                 <MotionCard key={balance.chain} delay={i * 0.1}>
                   <div className="glass-card-hover p-6 rounded-xl">
                     <div className="flex items-center justify-between mb-4">
-                      <div className={`w-12 h-12 rounded-lg bg-gradient-to-br ${balance.color} flex items-center justify-center`}>
-                        <Activity className="w-6 h-6 text-white" />
+                      <div className="w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden">
+                        <ChainLogoImg chainName={balance.chain} className="w-12 h-12" />
                       </div>
                       <ArrowUpRight className="w-5 h-5 text-green-500" />
                     </div>

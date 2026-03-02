@@ -102,6 +102,341 @@ const MAINNET_CONFIGS = {
     decimals: 18,
     color: 'from-red-600 to-orange-600',
   },
+  fantom: {
+    chainId: 250,
+    name: 'Fantom',
+    symbol: 'FTM',
+    rpcUrl: 'https://rpc.ankr.com/fantom',
+    fallbackRpcUrls: [
+      'https://fantom-rpc.publicnode.com',
+      'https://rpc.ftm.tools',
+      'https://1rpc.io/ftm',
+    ],
+    explorer: 'https://ftmscan.com',
+    decimals: 18,
+    color: 'from-blue-400 to-cyan-500',
+  },
+  gnosis: {
+    chainId: 100,
+    name: 'Gnosis',
+    symbol: 'xDAI',
+    rpcUrl: 'https://rpc.gnosischain.com',
+    fallbackRpcUrls: [
+      'https://gnosis-rpc.publicnode.com',
+      'https://1rpc.io/gnosis',
+      'https://gnosis.drpc.org',
+    ],
+    explorer: 'https://gnosisscan.io',
+    decimals: 18,
+    color: 'from-teal-500 to-green-500',
+  },
+  zkSyncEra: {
+    chainId: 324,
+    name: 'zkSync Era',
+    symbol: 'ETH',
+    rpcUrl: 'https://mainnet.era.zksync.io',
+    fallbackRpcUrls: [
+      'https://zksync-era-rpc.publicnode.com',
+      'https://1rpc.io/zksync2-era',
+      'https://zksync.drpc.org',
+    ],
+    explorer: 'https://explorer.zksync.io',
+    decimals: 18,
+    color: 'from-indigo-500 to-blue-600',
+  },
+  polygonZkEVM: {
+    chainId: 1101,
+    name: 'Polygon zkEVM',
+    symbol: 'ETH',
+    rpcUrl: 'https://zkevm-rpc.com',
+    fallbackRpcUrls: [
+      'https://polygon-zkevm-rpc.publicnode.com',
+      'https://1rpc.io/polygon/zkevm',
+      'https://polygon-zkevm.drpc.org',
+    ],
+    explorer: 'https://zkevm.polygonscan.com',
+    decimals: 18,
+    color: 'from-violet-500 to-purple-600',
+  },
+  linea: {
+    chainId: 59144,
+    name: 'Linea',
+    symbol: 'ETH',
+    rpcUrl: 'https://rpc.linea.build',
+    fallbackRpcUrls: [
+      'https://linea-rpc.publicnode.com',
+      'https://1rpc.io/linea',
+      'https://linea.drpc.org',
+    ],
+    explorer: 'https://lineascan.build',
+    decimals: 18,
+    color: 'from-gray-600 to-zinc-700',
+  },
+  scroll: {
+    chainId: 534352,
+    name: 'Scroll',
+    symbol: 'ETH',
+    rpcUrl: 'https://rpc.scroll.io',
+    fallbackRpcUrls: [
+      'https://scroll-rpc.publicnode.com',
+      'https://1rpc.io/scroll',
+      'https://scroll.drpc.org',
+    ],
+    explorer: 'https://scrollscan.com',
+    decimals: 18,
+    color: 'from-amber-500 to-orange-500',
+  },
+  mantle: {
+    chainId: 5000,
+    name: 'Mantle',
+    symbol: 'MNT',
+    rpcUrl: 'https://rpc.mantle.xyz',
+    fallbackRpcUrls: [
+      'https://mantle-rpc.publicnode.com',
+      'https://1rpc.io/mantle',
+      'https://mantle.drpc.org',
+    ],
+    explorer: 'https://mantlescan.xyz',
+    decimals: 18,
+    color: 'from-emerald-500 to-teal-600',
+  },
+  blast: {
+    chainId: 81457,
+    name: 'Blast',
+    symbol: 'ETH',
+    rpcUrl: 'https://rpc.blast.io',
+    fallbackRpcUrls: [
+      'https://blast-rpc.publicnode.com',
+      'https://1rpc.io/blast',
+      'https://blast.drpc.org',
+    ],
+    explorer: 'https://blastscan.io',
+    decimals: 18,
+    color: 'from-yellow-400 to-amber-500',
+  },
+  cronos: {
+    chainId: 25,
+    name: 'Cronos',
+    symbol: 'CRO',
+    rpcUrl: 'https://evm.cronos.org',
+    fallbackRpcUrls: [
+      'https://cronos-evm-rpc.publicnode.com',
+      'https://1rpc.io/cro',
+      'https://cronos.drpc.org',
+    ],
+    explorer: 'https://explorer.cronos.org',
+    decimals: 18,
+    color: 'from-blue-800 to-indigo-900',
+  },
+  celo: {
+    chainId: 42220,
+    name: 'Celo',
+    symbol: 'CELO',
+    rpcUrl: 'https://forno.celo.org',
+    fallbackRpcUrls: [
+      'https://celo-rpc.publicnode.com',
+      'https://1rpc.io/celo',
+      'https://celo.drpc.org',
+    ],
+    explorer: 'https://celoscan.io',
+    decimals: 18,
+    color: 'from-emerald-400 to-lime-500',
+  },
+  moonbeam: {
+    chainId: 1284,
+    name: 'Moonbeam',
+    symbol: 'GLMR',
+    rpcUrl: 'https://rpc.api.moonbeam.network',
+    fallbackRpcUrls: [
+      'https://moonbeam-rpc.publicnode.com',
+      'https://1rpc.io/glmr',
+      'https://moonbeam.drpc.org',
+    ],
+    explorer: 'https://moonscan.io',
+    decimals: 18,
+    color: 'from-pink-500 to-rose-600',
+  },
+  moonriver: {
+    chainId: 1285,
+    name: 'Moonriver',
+    symbol: 'MOVR',
+    rpcUrl: 'https://rpc.api.moonriver.moonbeam.network',
+    fallbackRpcUrls: [
+      'https://moonriver-rpc.publicnode.com',
+      'https://1rpc.io/movr',
+      'https://moonriver.drpc.org',
+    ],
+    explorer: 'https://moonriver.moonscan.io',
+    decimals: 18,
+    color: 'from-orange-500 to-red-500',
+  },
+  kava: {
+    chainId: 2222,
+    name: 'Kava',
+    symbol: 'KAVA',
+    rpcUrl: 'https://evm.kava.io',
+    fallbackRpcUrls: [
+      'https://kava-evm-rpc.publicnode.com',
+      'https://evm2.kava.io',
+      'https://kava.drpc.org',
+    ],
+    explorer: 'https://kavascan.com',
+    decimals: 18,
+    color: 'from-red-500 to-pink-600',
+  },
+  metis: {
+    chainId: 1088,
+    name: 'Metis',
+    symbol: 'METIS',
+    rpcUrl: 'https://andromeda.metis.io/?owner=1088',
+    fallbackRpcUrls: [
+      'https://metis-rpc.publicnode.com',
+      'https://1rpc.io/metis',
+      'https://metis.drpc.org',
+    ],
+    explorer: 'https://andromeda-explorer.metis.io',
+    decimals: 18,
+    color: 'from-teal-400 to-cyan-500',
+  },
+  aurora: {
+    chainId: 1313161554,
+    name: 'Aurora',
+    symbol: 'ETH',
+    rpcUrl: 'https://mainnet.aurora.dev',
+    fallbackRpcUrls: [
+      'https://aurora-rpc.publicnode.com',
+      'https://1rpc.io/aurora',
+      'https://aurora.drpc.org',
+    ],
+    explorer: 'https://aurorascan.dev',
+    decimals: 18,
+    color: 'from-green-500 to-emerald-600',
+  },
+  taiko: {
+    chainId: 167000,
+    name: 'Taiko',
+    symbol: 'ETH',
+    rpcUrl: 'https://rpc.mainnet.taiko.xyz',
+    fallbackRpcUrls: [
+      'https://taiko-rpc.publicnode.com',
+      'https://rpc.taiko.xyz',
+      'https://taiko.drpc.org',
+    ],
+    explorer: 'https://taikoscan.io',
+    decimals: 18,
+    color: 'from-rose-500 to-pink-600',
+  },
+  zora: {
+    chainId: 7777777,
+    name: 'Zora',
+    symbol: 'ETH',
+    rpcUrl: 'https://rpc.zora.energy',
+    fallbackRpcUrls: [
+      'https://zora-rpc.publicnode.com',
+      'https://1rpc.io/zora',
+      'https://zora.drpc.org',
+    ],
+    explorer: 'https://explorer.zora.energy',
+    decimals: 18,
+    color: 'from-purple-400 to-violet-500',
+  },
+  mode: {
+    chainId: 34443,
+    name: 'Mode',
+    symbol: 'ETH',
+    rpcUrl: 'https://mainnet.mode.network',
+    fallbackRpcUrls: [
+      'https://mode-rpc.publicnode.com',
+      'https://1rpc.io/mode',
+      'https://mode.drpc.org',
+    ],
+    explorer: 'https://modescan.io',
+    decimals: 18,
+    color: 'from-lime-500 to-green-600',
+  },
+  manta: {
+    chainId: 169,
+    name: 'Manta Pacific',
+    symbol: 'ETH',
+    rpcUrl: 'https://pacific-rpc.manta.network/http',
+    fallbackRpcUrls: [
+      'https://manta-pacific-rpc.publicnode.com',
+      'https://1rpc.io/manta',
+      'https://manta-pacific.drpc.org',
+    ],
+    explorer: 'https://pacific-explorer.manta.network',
+    decimals: 18,
+    color: 'from-sky-500 to-blue-600',
+  },
+  fraxtal: {
+    chainId: 252,
+    name: 'Fraxtal',
+    symbol: 'frxETH',
+    rpcUrl: 'https://rpc.frax.com',
+    fallbackRpcUrls: [
+      'https://fraxtal-rpc.publicnode.com',
+      'https://fraxtal.drpc.org',
+    ],
+    explorer: 'https://fraxscan.com',
+    decimals: 18,
+    color: 'from-gray-500 to-slate-600',
+  },
+  klaytn: {
+    chainId: 8217,
+    name: 'Klaytn',
+    symbol: 'KLAY',
+    rpcUrl: 'https://public-en-cypress.klaytn.net',
+    fallbackRpcUrls: [
+      'https://klaytn-rpc.publicnode.com',
+      'https://1rpc.io/klay',
+      'https://klaytn.drpc.org',
+    ],
+    explorer: 'https://klaytnscope.com',
+    decimals: 18,
+    color: 'from-orange-400 to-amber-500',
+  },
+  iotex: {
+    chainId: 4689,
+    name: 'IoTeX',
+    symbol: 'IOTX',
+    rpcUrl: 'https://babel-api.mainnet.iotex.io',
+    fallbackRpcUrls: [
+      'https://iotex-rpc.publicnode.com',
+      'https://1rpc.io/iotx',
+      'https://iotex.drpc.org',
+    ],
+    explorer: 'https://iotexscan.io',
+    decimals: 18,
+    color: 'from-teal-500 to-green-600',
+  },
+  boba: {
+    chainId: 288,
+    name: 'Boba Network',
+    symbol: 'ETH',
+    rpcUrl: 'https://mainnet.boba.network',
+    fallbackRpcUrls: [
+      'https://boba-rpc.publicnode.com',
+      'https://1rpc.io/boba',
+      'https://boba.drpc.org',
+    ],
+    explorer: 'https://bobascan.com',
+    decimals: 18,
+    color: 'from-green-400 to-lime-500',
+  },
+  harmonyOne: {
+    chainId: 1666600000,
+    name: 'Harmony',
+    symbol: 'ONE',
+    rpcUrl: 'https://api.harmony.one',
+    fallbackRpcUrls: [
+      'https://harmony-0-rpc.gateway.pokt.network',
+      'https://a.api.s0.t.hmny.io',
+      'https://harmony.drpc.org',
+    ],
+    explorer: 'https://explorer.harmony.one',
+    decimals: 18,
+    color: 'from-blue-300 to-cyan-400',
+  },
 };
 
 // Chain configurations with public RPC endpoints (Testnet)
@@ -211,6 +546,135 @@ const TESTNET_CONFIGS = {
     decimals: 18,
     color: 'from-red-500 to-orange-500',
   },
+  fantomTestnet: {
+    chainId: 4002,
+    name: 'Fantom Testnet',
+    symbol: 'FTM',
+    rpcUrl: 'https://rpc.testnet.fantom.network',
+    fallbackRpcUrls: [
+      'https://fantom-testnet-rpc.publicnode.com',
+      'https://fantom.drpc.org',
+    ],
+    explorer: 'https://testnet.ftmscan.com',
+    decimals: 18,
+    color: 'from-blue-300 to-cyan-400',
+  },
+  gnosisChiado: {
+    chainId: 10200,
+    name: 'Chiado',
+    symbol: 'xDAI',
+    rpcUrl: 'https://rpc.chiadochain.net',
+    fallbackRpcUrls: [
+      'https://gnosis-chiado-rpc.publicnode.com',
+      'https://chiado.drpc.org',
+    ],
+    explorer: 'https://blockscout.chiadochain.net',
+    decimals: 18,
+    color: 'from-teal-400 to-green-400',
+  },
+  zkSyncSepolia: {
+    chainId: 300,
+    name: 'zkSync Era Sepolia',
+    symbol: 'ETH',
+    rpcUrl: 'https://sepolia.era.zksync.dev',
+    fallbackRpcUrls: [
+      'https://zksync-era-sepolia.publicnode.com',
+      'https://zksync-sepolia.drpc.org',
+    ],
+    explorer: 'https://sepolia.explorer.zksync.io',
+    decimals: 18,
+    color: 'from-indigo-400 to-blue-500',
+  },
+  lineaSepolia: {
+    chainId: 59141,
+    name: 'Linea Sepolia',
+    symbol: 'ETH',
+    rpcUrl: 'https://rpc.sepolia.linea.build',
+    fallbackRpcUrls: [
+      'https://linea-sepolia-rpc.publicnode.com',
+      'https://linea-sepolia.drpc.org',
+    ],
+    explorer: 'https://sepolia.lineascan.build',
+    decimals: 18,
+    color: 'from-gray-500 to-zinc-600',
+  },
+  scrollSepolia: {
+    chainId: 534351,
+    name: 'Scroll Sepolia',
+    symbol: 'ETH',
+    rpcUrl: 'https://sepolia-rpc.scroll.io',
+    fallbackRpcUrls: [
+      'https://scroll-sepolia-rpc.publicnode.com',
+      'https://scroll-sepolia.drpc.org',
+    ],
+    explorer: 'https://sepolia.scrollscan.com',
+    decimals: 18,
+    color: 'from-amber-400 to-orange-400',
+  },
+  mantleSepolia: {
+    chainId: 5003,
+    name: 'Mantle Sepolia',
+    symbol: 'MNT',
+    rpcUrl: 'https://rpc.sepolia.mantle.xyz',
+    fallbackRpcUrls: [
+      'https://mantle-sepolia-rpc.publicnode.com',
+      'https://mantle-sepolia.drpc.org',
+    ],
+    explorer: 'https://explorer.sepolia.mantle.xyz',
+    decimals: 18,
+    color: 'from-emerald-400 to-teal-500',
+  },
+  blastSepolia: {
+    chainId: 168587773,
+    name: 'Blast Sepolia',
+    symbol: 'ETH',
+    rpcUrl: 'https://sepolia.blast.io',
+    fallbackRpcUrls: [
+      'https://blast-sepolia-rpc.publicnode.com',
+      'https://blast-sepolia.drpc.org',
+    ],
+    explorer: 'https://testnet.blastscan.io',
+    decimals: 18,
+    color: 'from-yellow-300 to-amber-400',
+  },
+  celoAlfajores: {
+    chainId: 44787,
+    name: 'Celo Alfajores',
+    symbol: 'CELO',
+    rpcUrl: 'https://alfajores-forno.celo-testnet.org',
+    fallbackRpcUrls: [
+      'https://celo-alfajores-rpc.publicnode.com',
+      'https://celo-alfajores.drpc.org',
+    ],
+    explorer: 'https://alfajores.celoscan.io',
+    decimals: 18,
+    color: 'from-emerald-300 to-lime-400',
+  },
+  modeSepolia: {
+    chainId: 919,
+    name: 'Mode Sepolia',
+    symbol: 'ETH',
+    rpcUrl: 'https://sepolia.mode.network',
+    fallbackRpcUrls: [
+      'https://mode-sepolia-rpc.publicnode.com',
+      'https://mode-sepolia.drpc.org',
+    ],
+    explorer: 'https://sepolia.explorer.mode.network',
+    decimals: 18,
+    color: 'from-lime-400 to-green-500',
+  },
+  mantaSepolia: {
+    chainId: 3441006,
+    name: 'Manta Sepolia',
+    symbol: 'ETH',
+    rpcUrl: 'https://manta-sepolia.drpc.org',
+    fallbackRpcUrls: [
+      'https://manta-pacific-sepolia-rpc.publicnode.com',
+    ],
+    explorer: 'https://pacific-explorer.sepolia-testnet.manta.network',
+    decimals: 18,
+    color: 'from-sky-400 to-blue-500',
+  },
 };
 
 // Combined configurations for chain ID lookup
@@ -271,18 +735,44 @@ const API_KEYS: Record<number, string> = {
 };
 
 // CoinGecko/CoinCap IDs for price fetching
-const COIN_IDS = { 
+const COIN_IDS: Record<string, string> = { 
   ETH: 'ethereum', 
-  MATIC: 'matic-network', 
+  MATIC: 'matic-network',
+  POL: 'matic-network',
   BNB: 'binancecoin',
-  AVAX: 'avalanche-2'
+  AVAX: 'avalanche-2',
+  FTM: 'fantom',
+  xDAI: 'xdai',
+  CRO: 'crypto-com-chain',
+  CELO: 'celo',
+  GLMR: 'moonbeam',
+  MOVR: 'moonriver',
+  KAVA: 'kava',
+  METIS: 'metis-token',
+  MNT: 'mantle',
+  KLAY: 'klay-token',
+  IOTX: 'iotex',
+  ONE: 'harmony',
+  frxETH: 'frax-ether',
 };
 
-const COINCAP_IDS = { 
+const COINCAP_IDS: Record<string, string> = { 
   ETH: 'ethereum', 
-  MATIC: 'polygon', 
+  MATIC: 'polygon',
+  POL: 'polygon',
   BNB: 'binance-coin',
-  AVAX: 'avalanche'
+  AVAX: 'avalanche',
+  FTM: 'fantom',
+  CRO: 'crypto-com-coin',
+  CELO: 'celo',
+  GLMR: 'moonbeam',
+  MOVR: 'moonriver',
+  KAVA: 'kava',
+  METIS: 'metis',
+  MNT: 'mantle',
+  KLAY: 'klaytn',
+  IOTX: 'iotex',
+  ONE: 'harmony',
 };
 
 // Map testnet symbols to mainnet equivalents for price lookup
@@ -290,12 +780,27 @@ const SYMBOL_MAP: Record<string, string> = {
   'TBNB': 'BNB',  // Testnet BNB -> BNB
   'ETH': 'ETH',
   'MATIC': 'MATIC',
+  'POL': 'POL',
   'BNB': 'BNB',
-  'AVAX': 'AVAX'
+  'AVAX': 'AVAX',
+  'FTM': 'FTM',
+  'XDAI': 'xDAI',
+  'CRO': 'CRO',
+  'CELO': 'CELO',
+  'GLMR': 'GLMR',
+  'MOVR': 'MOVR',
+  'KAVA': 'KAVA',
+  'METIS': 'METIS',
+  'MNT': 'MNT',
+  'KLAY': 'KLAY',
+  'IOTX': 'IOTX',
+  'ONE': 'ONE',
+  'FRXETH': 'frxETH',
 };
 
 export interface Balance {
   chain: string;
+  chainId: number;
   symbol: string;
   balance: string;
   usdValue: string;
@@ -926,34 +1431,26 @@ class BlockchainService {
         // Check if this is a testnet
         const isTestnet = Object.values(TESTNET_CONFIGS).some(c => c.chainId === config.chainId);
         
-        // Fetch price (always returns a valid value - either from API or fallback)
+        // Fetch price (returns 0 if unavailable — still show balance)
         const price = await this.fetchPrice(config.symbol, isTestnet);
-        
-        // Validate price is a valid number
-        if (isNaN(price) || !isFinite(price) || price <= 0) {
-          console.error(`Invalid price for ${config.symbol}: ${price}`);
-          return null;
-        }
-        
-        // Calculate USD value with proper precision
-        const usdValueNum = Number((balanceNum * price).toFixed(2));
-        
-        // Validate USD value
-        if (isNaN(usdValueNum) || !isFinite(usdValueNum) || usdValueNum < 0) {
-          console.error(`Invalid USD value for ${config.name}: balanceNum=${balanceNum}, price=${price}, result=${usdValueNum}`);
-          return null;
-        }
-        
+        const validPrice = price > 0 && isFinite(price) && !isNaN(price);
+
+        // Calculate USD value (0 when price is unavailable)
+        const usdValueNum = validPrice ? Number((balanceNum * price).toFixed(2)) : 0;
+
         // Format USD value - show for both mainnet and testnet
-        const formattedUsdValue = `$${usdValueNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        const formattedUsdValue = usdValueNum > 0
+          ? `$${usdValueNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          : '$0.00';
         const usdValue = isTestnet ? `${formattedUsdValue} (Testnet)` : formattedUsdValue;
 
         const result = {
           chain: config.name,
+          chainId: config.chainId,
           symbol: config.symbol,
           balance: balanceNum.toFixed(4),
           usdValue,
-          usdValueNum, // Include both mainnet and testnet in portfolio total
+          usdValueNum,
           color: config.color,
           rawBalance: balanceWei.toString(),
         };
@@ -1124,6 +1621,7 @@ class BlockchainService {
 
       const result = {
         chain: network.name,
+        chainId: network.chainId,
         symbol: network.symbol,
         balance: balanceNum.toFixed(4),
         usdValue,

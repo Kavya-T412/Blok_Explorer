@@ -76,9 +76,6 @@ const Landing = () => {
             <Button asChild size="lg" className="text-lg px-8 glow-border animate-glow-pulse">
               <NavLink to="/connect">Connect Wallet</NavLink>
             </Button>
-            <Button asChild variant="outline" size="lg" className="text-lg px-8">
-              <NavLink to="/dashboard">View Demo</NavLink>
-            </Button>
           </motion.div>
         </div>
       </section>
