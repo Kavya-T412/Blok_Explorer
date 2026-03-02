@@ -6,12 +6,12 @@ const Footer = () => {
       <div className="container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
-            <h3 className="text-lg font-bold gradient-text mb-4">ChainExplorer</h3>
+            <h3 className="text-lg font-bold gradient-text mb-4">ExBlok</h3>
             <p className="text-sm text-muted-foreground">
-              Your unified gateway to exploring multiple blockchain networks with ease.
+              Explore Your Blocks Across Chains with ease and efficiency.
             </p>
           </div>
-          
+
           <div>
             <h4 className="text-sm font-semibold mb-4">Quick Links</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
@@ -21,7 +21,7 @@ const Footer = () => {
               <li><a href="#" className="hover:text-primary transition-colors">Privacy Policy</a></li>
             </ul>
           </div>
-          
+
           <div>
             <h4 className="text-sm font-semibold mb-4">Connect</h4>
             <div className="flex gap-4">
@@ -37,9 +37,9 @@ const Footer = () => {
             </div>
           </div>
         </div>
-        
+
         <div className="mt-8 pt-8 border-t border-white/10 text-center text-sm text-muted-foreground">
-          © 2025 ChainExplorer. All rights reserved.
+          © 2025 ExBlok. All rights reserved.
         </div>
       </div>
     </footer>

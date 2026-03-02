@@ -832,7 +832,7 @@ export default function Swap() {
             </div>
             <div className="flex-1">
               <p className="text-xs font-bold text-squid-text-primary">Best Path Foundation</p>
-              <p className="text-[10px] text-gray-500 font-medium">Squid aggregates the best routes across 100+ chains.</p>
+              <p className="text-[10px] text-gray-500 font-medium">Swap tokens by using the best routes across 100+ chains.</p>
             </div>
             <ChevronRight className="w-4 h-4 text-gray-400" />
           </div>

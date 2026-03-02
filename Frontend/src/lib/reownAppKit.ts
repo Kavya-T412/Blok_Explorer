@@ -1,14 +1,14 @@
 import { createAppKit } from '@reown/appkit'
-import { 
-  mainnet, 
-  arbitrum, 
-  polygon, 
-  bsc, 
+import {
+  mainnet,
+  arbitrum,
+  polygon,
+  bsc,
   optimism,
   base,
   avalanche,
-  sepolia, 
-  polygonAmoy, 
+  sepolia,
+  polygonAmoy,
   bscTestnet,
   arbitrumSepolia,
   optimismSepolia,
@@ -27,9 +27,9 @@ const USE_TESTNET = import.meta.env.VITE_USE_TESTNET === 'true' || false;
 
 // Define all mainnet networks
 export const mainnetNetworks: [AppKitNetwork, ...AppKitNetwork[]] = [
-  mainnet, 
-  polygon, 
-  bsc, 
+  mainnet,
+  polygon,
+  bsc,
   arbitrum,
   optimism,
   base,
@@ -40,7 +40,7 @@ export const mainnetNetworks: [AppKitNetwork, ...AppKitNetwork[]] = [
 export const testnetNetworks: [AppKitNetwork, ...AppKitNetwork[]] = [
   sepolia,
   holesky,
-  polygonAmoy, 
+  polygonAmoy,
   bscTestnet,
   arbitrumSepolia,
   optimismSepolia,
@@ -65,8 +65,8 @@ export const wagmiAdapter = new WagmiAdapter({
 
 // 3. Configure the metadata
 const metadata = {
-  name: 'ChainExplorer',
-  description: 'Multi-Chain Blockchain Explorer with Wallet Integration',
+  name: 'ExBlok',
+  description: 'ExBlok - Explore Your Blocks Across Chains',
   url: window.location.origin,
   icons: ['https://avatars.githubusercontent.com/u/179229932']
 }

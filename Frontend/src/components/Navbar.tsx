@@ -86,7 +86,7 @@ const Navbar = () => {
                 WebkitTextFillColor: 'transparent',
               }}
             >
-              ChainExplorer
+              ExBlok
             </span>
           </NavLink>
 
