@@ -15,36 +15,46 @@ import NotFound from "./pages/NotFound";
 import { WagmiProvider } from 'wagmi';
 import { wagmiAdapter } from './lib/reownAppKit';
 
+import { useEffect } from "react";
+import { notificationService } from "./services/notificationService";
+
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <WagmiProvider config={wagmiAdapter.wagmiConfig}>
-      <WalletProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            {/* Global animated background — same as Swap page */}
-            <div className="squid-bg-wrapper">
-              <div className="squid-wave" />
-            </div>
-            <Routes>
-              <Route path="/" element={<Landing />} />
-              <Route path="/connect" element={<Connect />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/gas-estimator" element={<GasEstimator />} />
-              <Route path="/swap" element={<Swap />} />
-              <Route path="/notifications" element={<Notifications />} />
-              <Route path="/settings" element={<Settings />} />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </TooltipProvider>
-      </WalletProvider>
-    </WagmiProvider>
-  </QueryClientProvider>
-);
+const App = () => {
+  useEffect(() => {
+    notificationService.connect();
+    return () => notificationService.disconnect();
+  }, []);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <WagmiProvider config={wagmiAdapter.wagmiConfig}>
+        <WalletProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              {/* Global animated background — same as Swap page */}
+              <div className="squid-bg-wrapper">
+                <div className="squid-wave" />
+              </div>
+              <Routes>
+                <Route path="/" element={<Landing />} />
+                <Route path="/connect" element={<Connect />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/gas-estimator" element={<GasEstimator />} />
+                <Route path="/swap" element={<Swap />} />
+                <Route path="/notifications" element={<Notifications />} />
+                <Route path="/settings" element={<Settings />} />
+                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          </TooltipProvider>
+        </WalletProvider>
+      </WagmiProvider>
+    </QueryClientProvider>
+  );
+};
 
 export default App;
