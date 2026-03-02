@@ -1,8 +1,12 @@
-﻿const express = require('express');
+﻿require('dotenv').config();
+const express = require('express');
 const cors = require('cors');
 const { rubicSwapService } = require('./swap');
 const { getGasPrices } = require('./gasEstimate');
 const { getTransactionHistory, fetchNetworkTransactions } = require('./txHis');
+const { initSocket } = require('./services/notificationService');
+const { Server } = require('socket.io');
+const { saveUserWebhook } = require('./services/userWebhookService');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -12,6 +16,34 @@ BigInt.prototype.toJSON = function () { return this.toString(); };
 
 app.use(cors());
 app.use(express.json());
+
+// --- New User Webhook Endpoint ---
+app.post('/api/save-webhook', (req, res) => {
+  try {
+    const { walletAddress, webhookUrl } = req.body;
+
+    if (!walletAddress || !webhookUrl) {
+      return res.status(400).json({
+        success: false,
+        error: "walletAddress and webhookUrl are required"
+      });
+    }
+
+    saveUserWebhook(walletAddress, webhookUrl);
+
+    return res.json({
+      success: true,
+      message: "Webhook saved successfully"
+    });
+  } catch (error) {
+    console.error('❌ /api/save-webhook error:', error.message);
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+// ---------------------------------
 
 
 // API Routes
@@ -232,7 +264,7 @@ app.get('/api/rubic/chain-info/:chainId', async (req, res) => {
 });
 
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`\n🚀 Server running on port ${PORT}`);
   console.log(`📍 Health:       http://localhost:${PORT}/api/health`);
   console.log(`📍 Transactions: /api/transactions/:address?mode=mainnet|testnet`);
@@ -242,3 +274,22 @@ app.listen(PORT, () => {
   console.log(`📍 Rubic Swap:   POST /api/rubic/swap-data`);
   console.log(`📍 Rubic Status: /api/rubic/status/:txHash?srcBlockchain=ETH\n`);
 });
+
+// Initialize Socket.io (Modular integration)
+const io = new Server(server, {
+  cors: { origin: "*" }
+});
+
+const { monitorPrice } = require('./services/notificationService');
+initSocket(io);
+
+// Example price monitoring for the user's request (ETH in INR)
+// Threshold: 3,00,000 INR
+monitorPrice('ethereum', 300000, 'inr');
+
+// --- Discord Test Trigger ---
+const { sendDiscordNotification } = require('./services/discordService');
+setTimeout(() => {
+  sendDiscordNotification("🚀 Test Discord Notification Working");
+}, 5000);
+// ----------------------------

@@ -17,15 +17,16 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { ethers } from 'ethers';
 import { rubicSwapService, RubicChain, RubicToken, RubicRoute } from '@/services/swapService';
+import { notificationService } from '@/services/notificationService';
 
 // ── Slippage presets (as decimal fractions) ───────────────────────────────────
 const SLIPPAGE_PRESETS = [
-  { label: '0.1%', value: 0.001 },
-  { label: '0.5%', value: 0.005 },  // default – best for most pairs
-  { label: '1%', value: 0.01 },
+  { label: '0.5%', value: 0.005 },
+  { label: '1%', value: 0.01 },  // new default – best for most pairs
+  { label: '2%', value: 0.02 },
   { label: '3%', value: 0.03 },
 ];
-const DEFAULT_SLIPPAGE = 0.005;
+const DEFAULT_SLIPPAGE = 0.01;
 
 // ── Slippage Settings Dialog ──────────────────────────────────────────────────
 interface SlippageDialogProps {
@@ -597,6 +598,11 @@ export default function Swap() {
         receiverAddress: walletAddress,
         slippage,
       });
+
+      if (!swapData || !swapData.transaction) {
+        throw new Error('Failed to retrieve transaction data from Rubic. Please try a different route.');
+      }
+
       const tx = swapData.transaction;
       const spenderAddress = tx.approvalAddress || tx.to;
 
@@ -604,10 +610,14 @@ export default function Swap() {
         const tokenContract = new ethers.Contract(srcToken.address, ERC20_ABI, signer);
         const srcAmtBig = ethers.parseUnits(srcAmount, srcToken.decimals);
         const allowance: bigint = await tokenContract.allowance(walletAddress, spenderAddress) as bigint;
+
         if (allowance < srcAmtBig) {
           toast({ title: 'Approving token...', description: 'Please confirm in wallet' });
+
           const approveTx = await tokenContract.approve(spenderAddress, srcAmtBig);
-          await (approveTx as { wait: () => Promise<unknown> }).wait();
+          const approveReceipt = await (approveTx as { wait: () => Promise<any> }).wait();
+
+          toast({ title: 'Token approved!', description: 'Ready to swap.' });
         }
       }
 
@@ -617,13 +627,66 @@ export default function Swap() {
         data: tx.data,
         value: tx.value ? BigInt(tx.value) : 0n,
       });
+
       toast({ title: 'Swap submitted!', description: `Tx: ${txResponse.hash.slice(0, 10)}...` });
-      await txResponse.wait(1);
-      toast({ title: 'Swap confirmed!', description: 'Transaction mined successfully.' });
+
+      // Send real notification for submission
+      notificationService.sendNotification({
+        type: "PENDING",
+        message: `Swap of ${srcAmount} ${srcToken.symbol} submitted`,
+        txHash: txResponse.hash
+      });
+
+      const receipt = await txResponse.wait(1);
+
+      if (receipt.status === 1) {
+        toast({ title: 'Transfer Confirmed!', description: 'Transaction mined with 1 block.' });
+
+        // The backend will continue tracking up to 12 blocks and notify via Socket.io
+        notificationService.sendNotification({
+          type: "CONFIRMATION",
+          message: `Swap submitted. Waiting for multi-block confirmation...`,
+          txHash: txResponse.hash,
+          blocks: 1
+        });
+      } else {
+        throw new Error('Transaction reverted on-chain.');
+      }
+
       setShowRoutes(false);
       setSrcAmount('');
     } catch (err: any) {
-      toast({ title: 'Swap Process Stopped', description: `The transaction was interrupted: ${err.message}`, variant: 'destructive' });
+      console.error('Swap Error:', err);
+
+      let errorMessage = err.message || "Swap failed";
+
+      // Handle common ethers/wallet errors with detailed reasons
+      if (err.code === 'INSUFFICIENT_FUNDS') {
+        errorMessage = "Insufficient funds for swap and gas fees.";
+      } else if (err.code === 'ACTION_REJECTED') {
+        errorMessage = "Transaction rejected in wallet.";
+      } else if (err.message?.includes('user rejected')) {
+        errorMessage = "Transaction rejected in wallet.";
+      } else if (err.message?.includes('gas too low') || err.code === 'NONCE_EXPIRED') {
+        errorMessage = "Transaction failed: Gas price too low or nonce issue.";
+      } else if (err.message?.includes('intrinsic gas too low')) {
+        errorMessage = "Transaction failed: Out of gas.";
+      } else if (err.message?.includes('execution reverted')) {
+        errorMessage = "Transaction failed: Contract execution reverted.";
+      }
+
+      toast({
+        title: 'Swap Interrupted',
+        description: errorMessage,
+        variant: 'destructive'
+      });
+
+      // Send real notification for failure with detailed reason
+      notificationService.sendNotification({
+        type: "FAILED",
+        message: errorMessage,
+        txHash: ""
+      });
     } finally {
       setLoading(false);
     }
