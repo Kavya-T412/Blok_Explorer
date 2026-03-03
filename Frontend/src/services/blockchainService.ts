@@ -709,34 +709,36 @@ const API_DOMAINS: Record<number, string> = {
 };
 
 // API Keys (add your own from respective explorers)
+const API_KEY = import.meta.env.VITE_EXPLORER_API_KEY || '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K';
+
 const API_KEYS: Record<number, string> = {
   // Ethereum Mainnet & Testnets
-  1: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
-  11155111: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
-  17000: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  1: API_KEY,
+  11155111: API_KEY,
+  17000: API_KEY,
   // Polygon Mainnet & Testnets
-  137: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
-  80002: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  137: API_KEY,
+  80002: API_KEY,
   // BSC Mainnet & Testnet
-  56: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
-  97: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  56: API_KEY,
+  97: API_KEY,
   // Arbitrum Mainnet & Testnet
-  42161: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
-  421614: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  42161: API_KEY,
+  421614: API_KEY,
   // Optimism Mainnet & Testnet
-  10: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
-  11155420: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  10: API_KEY,
+  11155420: API_KEY,
   // Base Mainnet & Testnet
-  8453: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
-  84532: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  8453: API_KEY,
+  84532: API_KEY,
   // Avalanche Mainnet & Testnet
-  43114: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
-  43113: '3TVS5MFI9QU3261QD7VTURNBWFCHRNDX4K',
+  43114: API_KEY,
+  43113: API_KEY,
 };
 
 // CoinGecko/CoinCap IDs for price fetching
-const COIN_IDS: Record<string, string> = { 
-  ETH: 'ethereum', 
+const COIN_IDS: Record<string, string> = {
+  ETH: 'ethereum',
   MATIC: 'matic-network',
   POL: 'matic-network',
   BNB: 'binancecoin',
@@ -756,8 +758,8 @@ const COIN_IDS: Record<string, string> = {
   frxETH: 'frax-ether',
 };
 
-const COINCAP_IDS: Record<string, string> = { 
-  ETH: 'ethereum', 
+const COINCAP_IDS: Record<string, string> = {
+  ETH: 'ethereum',
   MATIC: 'polygon',
   POL: 'polygon',
   BNB: 'binance-coin',
@@ -776,7 +778,7 @@ const COINCAP_IDS: Record<string, string> = {
 };
 
 // Map testnet symbols to mainnet equivalents for price lookup
-const SYMBOL_MAP: Record<string, string> = { 
+const SYMBOL_MAP: Record<string, string> = {
   'TBNB': 'BNB',  // Testnet BNB -> BNB
   'ETH': 'ETH',
   'MATIC': 'MATIC',
@@ -843,7 +845,7 @@ class BlockchainService {
   private currentChainId: number | null = null;
   private pendingRequests: Map<string, Promise<Transaction[]>> = new Map();
   private pendingBalanceRequests: Map<string, Promise<Balance | null>> = new Map();
-  
+
   // Rate limiting - optimized for faster parallel requests
   private requestQueue: Map<string, Promise<any>> = new Map();
   private lastRequestTime: Map<string, number> = new Map();
@@ -875,7 +877,7 @@ class BlockchainService {
 
         // Initialize fallback providers if available
         if (config.fallbackRpcUrls && config.fallbackRpcUrls.length > 0) {
-          const fallbackProviders = config.fallbackRpcUrls.map(url => 
+          const fallbackProviders = config.fallbackRpcUrls.map(url =>
             new ethers.JsonRpcProvider(
               url,
               network,
@@ -917,7 +919,7 @@ class BlockchainService {
         // Implement rate limiting
         const lastRequest = this.lastRequestTime.get(key) || 0;
         const timeSinceLastRequest = Date.now() - lastRequest;
-        
+
         if (timeSinceLastRequest < this.MIN_REQUEST_INTERVAL) {
           const delay = this.MIN_REQUEST_INTERVAL - timeSinceLastRequest;
           await new Promise(resolve => setTimeout(resolve, delay));
@@ -930,16 +932,16 @@ class BlockchainService {
         return result;
       } catch (error: any) {
         // Handle rate limiting errors
-        if (error?.code === 429 || error?.message?.includes('429') || 
-            error?.message?.includes('Too Many Requests')) {
-          
+        if (error?.code === 429 || error?.message?.includes('429') ||
+          error?.message?.includes('Too Many Requests')) {
+
           if (retryCount < this.MAX_RETRIES) {
             // Exponential backoff: 1s, 2s, 4s
             const delay = this.RETRY_DELAY * Math.pow(2, retryCount);
             console.warn(`Rate limit hit, retrying in ${delay}ms (attempt ${retryCount + 1}/${this.MAX_RETRIES})`);
-            
+
             await new Promise(resolve => setTimeout(resolve, delay));
-            
+
             // Remove from queue and retry
             this.requestQueue.delete(key);
             return this.makeRateLimitedRequest(key, requestFn, retryCount + 1);
@@ -948,7 +950,7 @@ class BlockchainService {
             throw new Error('Rate limit exceeded. Please try again in a few moments.');
           }
         }
-        
+
         throw error;
       } finally {
         this.requestQueue.delete(key);
@@ -968,14 +970,14 @@ class BlockchainService {
       // Quick health check with timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout (reduced from 3s)
-      
+
       await Promise.race([
         primaryProvider.getBlockNumber(),
-        new Promise((_, reject) => 
+        new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Timeout')), 2000)
         )
       ]);
-      
+
       clearTimeout(timeoutId);
       return primaryProvider;
     } catch (error) {
@@ -986,7 +988,7 @@ class BlockchainService {
           try {
             await Promise.race([
               fallbackProvider.getBlockNumber(),
-              new Promise((_, reject) => 
+              new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('Timeout')), 2000)
               )
             ]);
@@ -996,7 +998,7 @@ class BlockchainService {
           }
         }
       }
-      
+
       // If all fallbacks fail, return primary anyway (last resort)
       return primaryProvider;
     }
@@ -1019,10 +1021,10 @@ class BlockchainService {
   // Get active configuration based on settings (not wallet chain)
   private getActiveConfigs(): typeof MAINNET_CONFIGS | typeof TESTNET_CONFIGS {
     // Read from localStorage (set by NetworkModeToggle in Settings)
-    const useTestnet = typeof window !== 'undefined' 
+    const useTestnet = typeof window !== 'undefined'
       ? localStorage.getItem('useTestnet') === 'true'
       : false;
-    
+
     console.log(`Active mode from settings: ${useTestnet ? 'TESTNET' : 'MAINNET'}`);
     return useTestnet ? TESTNET_CONFIGS : MAINNET_CONFIGS;
   }
@@ -1031,25 +1033,25 @@ class BlockchainService {
   getAllAvailableChains(): string[] {
     const baseConfigs = this.getActiveConfigs();
     const customNetworks = this.getActiveCustomNetworks();
-    
+
     // Get chain names from base configs
     const baseChains = Object.values(baseConfigs).map(config => config.name);
-    
+
     // Get chain names from custom networks
     const customChains = customNetworks.map(network => network.name);
-    
+
     // Combine and sort
     return [...baseChains, ...customChains].sort();
   }
 
   // Get custom networks filtered by type (mainnet or testnet)
   private getActiveCustomNetworks(): CustomNetwork[] {
-    const useTestnet = typeof window !== 'undefined' 
+    const useTestnet = typeof window !== 'undefined'
       ? localStorage.getItem('useTestnet') === 'true'
       : false;
-    
+
     const customNetworks = getCustomNetworks();
-    return customNetworks.filter(network => 
+    return customNetworks.filter(network =>
       useTestnet ? network.type === 'testnet' : network.type === 'mainnet'
     );
   }
@@ -1058,7 +1060,7 @@ class BlockchainService {
   private getAllActiveConfigs(): Record<string, NetworkConfig> {
     const baseConfigs = this.getActiveConfigs();
     const customNetworks = this.getActiveCustomNetworks();
-    
+
     // Convert custom networks to NetworkConfig format
     const customConfigs: Record<string, NetworkConfig> = {};
     customNetworks.forEach(network => {
@@ -1074,7 +1076,7 @@ class BlockchainService {
         key: network.id,
       };
     });
-    
+
     return { ...baseConfigs, ...customConfigs };
   }
 
@@ -1082,7 +1084,7 @@ class BlockchainService {
   private getOrCreateCustomProvider(network: CustomNetwork): ethers.JsonRpcProvider {
     const key = network.id;
     let provider = this.providers.get(key);
-    
+
     if (!provider) {
       console.log(`🔧 Creating new provider for ${network.name} (${network.rpcUrl})`);
       try {
@@ -1090,7 +1092,7 @@ class BlockchainService {
           name: network.name.toLowerCase().replace(/\s+/g, '-'),
           chainId: network.chainId,
         });
-        
+
         provider = new ethers.JsonRpcProvider(
           network.rpcUrl,
           ethersNetwork,
@@ -1099,12 +1101,12 @@ class BlockchainService {
             batchMaxCount: 1,
           }
         );
-        
+
         this.providers.set(key, provider);
-        
+
         // Initialize fallback providers if available
         if (network.fallbackRpcUrls && network.fallbackRpcUrls.length > 0) {
-          const fallbackProviders = network.fallbackRpcUrls.map(url => 
+          const fallbackProviders = network.fallbackRpcUrls.map(url =>
             new ethers.JsonRpcProvider(
               url,
               ethersNetwork,
@@ -1126,7 +1128,7 @@ class BlockchainService {
     } else {
       console.log(`♻️ Using existing provider for ${network.name}`);
     }
-    
+
     return provider;
   }
 
@@ -1143,14 +1145,14 @@ class BlockchainService {
     const fromAddr = (tx.from || '').toLowerCase();
     const toAddr = (tx.to || '').toLowerCase();
     const userAddr = address.toLowerCase();
-    
+
     const direction: Transaction['direction'] = isContractCreation ? 'sent'
       : fromAddr === userAddr && toAddr === userAddr ? 'self'
-      : fromAddr === userAddr ? 'sent' : 'received';
+        : fromAddr === userAddr ? 'sent' : 'received';
 
     const valueInEther = parseFloat(ethers.formatEther(tx.value));
     const valueFormatted = valueInEther > 0 ? valueInEther.toFixed(6) : '0';
-    
+
     const txTimestamp = isExplorerAPI ? parseInt(tx.timeStamp) : tx.timestamp;
 
     return {
@@ -1161,7 +1163,7 @@ class BlockchainService {
       valueRaw: tx.value?.toString?.() || tx.value,
       gas: tx.gas || tx.gasLimit?.toString(),
       chain: config.name,
-      status: isExplorerAPI 
+      status: isExplorerAPI
         ? ((tx.txreceipt_status === '1' || tx.isError === '0') ? 'success' : 'failed')
         : (tx.status === 1 ? 'success' : tx.status === 0 ? 'failed' : 'pending'),
       time: this.formatTimeAgo(txTimestamp),
@@ -1180,20 +1182,20 @@ class BlockchainService {
   private async fetchPrice(symbol: string, isTestnet: boolean = false): Promise<number> {
     // Always map testnet symbols to their mainnet equivalents for price lookup
     const mappedSymbol = SYMBOL_MAP[symbol.toUpperCase()] || symbol.toUpperCase();
-    
+
     const cacheKey = mappedSymbol.toLowerCase();
     const cached = this.priceCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < this.PRICE_CACHE_DURATION) return cached.price;
-    
+
     // Try multiple API providers in sequence
     const price = await this.fetchPriceFromAPIs(mappedSymbol);
-    
+
     if (price > 0) {
       this.priceCache.set(cacheKey, { price, timestamp: Date.now() });
       console.log(`💰 Price for ${symbol} (${mappedSymbol}): $${price}`);
       return price;
     }
-    
+
     // If all APIs fail, log error and return 0 (don't use static values)
     console.error(`❌ Failed to fetch price for ${symbol} (mapped to ${mappedSymbol}) from all API providers`);
     return 0;
@@ -1323,7 +1325,7 @@ class BlockchainService {
       'MATIC': 'MATIC-USDT',
       'AVAX': 'AVAX-USDT',
     };
-    
+
     const kucoinSymbol = kucoinSymbols[symbol];
     if (!kucoinSymbol) return 0;
 
@@ -1359,7 +1361,7 @@ class BlockchainService {
       'MATIC': 'MATICUSDT',
       'AVAX': 'AVAXUSDT',
     };
-    
+
     const binanceSymbol = binanceSymbols[symbol];
     if (!binanceSymbol) return 0; // Symbol not supported
 
@@ -1370,7 +1372,7 @@ class BlockchainService {
       // Note: Binance API has CORS restrictions from browsers
       const response = await fetch(
         `https://api.binance.com/api/v3/ticker/price?symbol=${binanceSymbol}`,
-        { 
+        {
           signal: controller.signal,
           mode: 'cors',
         }
@@ -1421,16 +1423,16 @@ class BlockchainService {
 
         const balanceEth = ethers.formatEther(balanceWei);
         const balanceNum = parseFloat(balanceEth);
-        
+
         // Validate balance is a valid number
         if (isNaN(balanceNum) || !isFinite(balanceNum) || balanceNum < 0) {
           console.error(`Invalid balance for ${config.name}: ${balanceEth}`);
           return null;
         }
-        
+
         // Check if this is a testnet
         const isTestnet = Object.values(TESTNET_CONFIGS).some(c => c.chainId === config.chainId);
-        
+
         // Fetch price (returns 0 if unavailable — still show balance)
         const price = await this.fetchPrice(config.symbol, isTestnet);
         const validPrice = price > 0 && isFinite(price) && !isNaN(price);
@@ -1485,20 +1487,20 @@ class BlockchainService {
     if (!address) return [];
 
     console.log('🔍 Starting getAllBalances...');
-    
+
     // Get active configs based on connected chain (default networks)
     const activeConfigs = this.getActiveConfigs();
     const chains = Object.entries(activeConfigs);
-    
+
     // Get custom networks for current mode
     const customNetworks = this.getActiveCustomNetworks();
-    
+
     console.log(`📊 Fetching balances from ${chains.length} default networks and ${customNetworks.length} custom networks`);
-    
+
     // OPTIMIZATION: Fetch all balances in parallel with batching to avoid overwhelming the API
     const BATCH_SIZE = 5; // Process 5 networks at a time
     const allBalances: Balance[] = [];
-    
+
     // Fetch from default networks in batches
     console.log('🌐 Fetching from default networks (parallel)...');
     for (let i = 0; i < chains.length; i += BATCH_SIZE) {
@@ -1506,7 +1508,7 @@ class BlockchainService {
       const batchResults = await Promise.allSettled(
         batch.map(([key, config]) => this.getBalance(address, key, config))
       );
-      
+
       batchResults.forEach((result, idx) => {
         if (result.status === 'fulfilled' && result.value) {
           allBalances.push(result.value);
@@ -1516,7 +1518,7 @@ class BlockchainService {
         }
       });
     }
-    
+
     // Fetch from custom networks in batches
     if (customNetworks.length > 0) {
       console.log(`🔧 Fetching from ${customNetworks.length} custom networks (parallel)...`);
@@ -1525,7 +1527,7 @@ class BlockchainService {
         const batchResults = await Promise.allSettled(
           batch.map(network => this.getCustomNetworkBalance(address, network))
         );
-        
+
         batchResults.forEach((result, idx) => {
           if (result.status === 'fulfilled' && result.value) {
             allBalances.push(result.value);
@@ -1538,7 +1540,7 @@ class BlockchainService {
     } else {
       console.log('ℹ️ No custom networks configured for current mode');
     }
-    
+
     console.log(`✅ getAllBalances complete: ${allBalances.length} balances fetched`);
     return allBalances;
   }
@@ -1558,7 +1560,7 @@ class BlockchainService {
         console.log(`✅ Provider connected for ${network.name}`);
       } catch (connError: any) {
         console.warn(`⚠️ Primary RPC failed for ${network.name}, trying fallbacks...`);
-        
+
         // Try fallback providers
         const fallbacks = this.fallbackProviders.get(network.id);
         if (fallbacks && fallbacks.length > 0) {
@@ -1597,24 +1599,24 @@ class BlockchainService {
 
       const balanceEth = ethers.formatUnits(balanceWei, network.decimals);
       const balanceNum = parseFloat(balanceEth);
-      
+
       console.log(`📊 Formatted balance for ${network.name}: ${balanceNum} ${network.symbol}`);
-      
+
       // Validate balance is a valid number
       if (isNaN(balanceNum) || !isFinite(balanceNum) || balanceNum < 0) {
         console.error(`❌ Invalid balance for ${network.name}: ${balanceEth}`);
         return null;
       }
-      
+
       // Try to fetch price (may not be available for custom tokens)
       const price = await this.fetchPrice(network.symbol, network.type === 'testnet');
       console.log(`💵 Price for ${network.symbol}: $${price}`);
-      
+
       // Calculate USD value if price is available
       const usdValueNum = price > 0 ? Number((balanceNum * price).toFixed(2)) : 0;
-      
+
       // Format USD value
-      const formattedUsdValue = usdValueNum > 0 
+      const formattedUsdValue = usdValueNum > 0
         ? `$${usdValueNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         : '$0.00';
       const usdValue = network.type === 'testnet' ? `${formattedUsdValue} (Testnet)` : formattedUsdValue;
@@ -1629,7 +1631,7 @@ class BlockchainService {
         color: network.color,
         rawBalance: balanceWei.toString(),
       };
-      
+
       console.log(`✅ Successfully fetched balance for ${network.name}:`, result);
       return result;
     } catch (error: any) {
@@ -1647,45 +1649,45 @@ class BlockchainService {
   async getTransactionsFromBackend(address: string): Promise<Transaction[]> {
     try {
       // Determine network mode from localStorage (mainnet or testnet)
-      const useTestnet = typeof window !== 'undefined' 
+      const useTestnet = typeof window !== 'undefined'
         ? localStorage.getItem('useTestnet') === 'true'
         : false;
       const networkMode = useTestnet ? 'testnet' : 'mainnet';
-      
+
       console.log(`📡 Fetching ${networkMode.toUpperCase()} transactions from backend API for ${address}`);
-      
+
       const response = await fetch(`${BACKEND_API_URL}/api/transactions/${address}?mode=${networkMode}`, {
         signal: AbortSignal.timeout(60000) // 60 second timeout for multiple networks
       });
-      
+
       if (!response.ok) {
         throw new Error(`Backend API error: ${response.status}`);
       }
-      
+
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || 'Failed to fetch from backend');
       }
-      
+
       console.log(`📊 Backend returned ${data.transactions?.length || 0} transactions for ${data.networkMode || 'unknown'} mode`);
-      
+
       // If no transactions found, log the network mode
       if (!data.transactions || data.transactions.length === 0) {
         console.log(`ℹ️ No transactions found in ${data.networkMode || 'current'} network`);
       }
-      
+
       // Log first transaction for debugging
       // if (data.transactions && data.transactions.length > 0) {
       //   console.log('Sample transaction:', JSON.stringify(data.transactions[0], null, 2));
       // }
-      
+
       // Transform backend response to match our Transaction interface
       const transactions: Transaction[] = data.transactions.map((tx: any, index: number) => {
         // Alchemy returns value as a decimal number (not wei), so use it directly
         const value = tx.value !== null && tx.value !== undefined ? parseFloat(tx.value) : 0;
         const valueFormatted = value > 0 ? value.toFixed(6) : '0';
-        
+
         // Parse timestamp correctly - backend returns ISO string in metadata.blockTimestamp
         let txTimestamp: number;
         if (tx.metadata?.blockTimestamp) {
@@ -1717,15 +1719,15 @@ class BlockchainService {
           }
           console.warn(`No timestamp for tx ${tx.hash}, estimated from block ${blockNum}: ${new Date(txTimestamp * 1000).toISOString()}`);
         }
-        
+
         // Get asset symbol, default to 'ETH' if not provided
         const asset = tx.asset || 'ETH';
-        
+
         // Get transaction status from backend txStatus field
-        const txStatus: 'success' | 'pending' | 'failed' = 
-          tx.txStatus === 'failed' ? 'failed' : 
-          tx.txStatus === 'pending' ? 'pending' : 'success';
-        
+        const txStatus: 'success' | 'pending' | 'failed' =
+          tx.txStatus === 'failed' ? 'failed' :
+            tx.txStatus === 'pending' ? 'pending' : 'success';
+
         return {
           hash: tx.hash,
           from: tx.from || '',
@@ -1739,14 +1741,14 @@ class BlockchainService {
           date: this.formatDate(txTimestamp),
           timestamp: txTimestamp,
           blockNumber: tx.blockNum ? parseInt(tx.blockNum, 16) : 0,
-          type: (!tx.to || tx.to === null) ? 'contract-deployment' : 
-                (tx.category === 'erc20' || tx.category === 'erc721' || tx.category === 'erc1155') ? 'contract-interaction' : 'transfer',
+          type: (!tx.to || tx.to === null) ? 'contract-deployment' :
+            (tx.category === 'erc20' || tx.category === 'erc721' || tx.category === 'erc1155') ? 'contract-interaction' : 'transfer',
           direction: tx.direction as 'sent' | 'received',
           isContractCreation: !tx.to || tx.to === null,
           contractAddress: tx.contractAddress || '',
         };
       });
-      
+
       console.log(`✅ Backend API returned ${transactions.length} transactions`);
       return transactions;
     } catch (error) {
@@ -1777,7 +1779,7 @@ class BlockchainService {
       const apiKey = API_KEYS[config.chainId];
       const apiKeyParam = apiKey ? `&apikey=${apiKey}` : '';
       const apiUrl = `https://${apiDomain}/api?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&sort=desc${apiKeyParam}`;
-      
+
       const response = await fetch(apiUrl);
       const data = await response.json();
 
@@ -1789,13 +1791,13 @@ class BlockchainService {
         console.log(`✓ Explorer: No transactions on ${config.name}`);
         return [];
       }
-      
+
       // For any other status (including NOTOK), return empty and let RPC handle it
       if (data.status === '0' && data.message === 'NOTOK') {
         // This usually means API key is required, silently fall back to RPC
         return [];
       }
-      
+
       return [];
     } catch (error) {
       // Silent fail, let RPC handle it
@@ -1819,12 +1821,12 @@ class BlockchainService {
       const blocksToCheck = Math.min(50, currentBlock); // Scan only last 50 blocks for speed
       const transactions: Transaction[] = [];
       const BATCH_SIZE = 10; // Check 10 blocks at a time
-      
+
       // Process blocks in batches
       for (let i = 0; i < blocksToCheck && transactions.length < limit; i += BATCH_SIZE) {
         const batchEnd = Math.min(i + BATCH_SIZE, blocksToCheck);
         const blockNumbers = Array.from(
-          { length: batchEnd - i }, 
+          { length: batchEnd - i },
           (_, idx) => currentBlock - i - idx
         );
 
@@ -1849,11 +1851,11 @@ class BlockchainService {
 
             const txHashes = block.transactions as string[];
             if (txHashes.length === 0) continue;
-            
+
             // Check first few transactions sequentially
             for (const txHash of txHashes.slice(0, 10)) {
               if (transactions.length >= limit) break;
-              
+
               try {
                 const txDetails = await this.makeRateLimitedRequest(
                   `tx-${chain}-${txHash}`,
@@ -1863,8 +1865,8 @@ class BlockchainService {
                 if (!txDetails) continue;
 
                 // Quick address check
-                if (txDetails.from?.toLowerCase() !== address.toLowerCase() && 
-                    txDetails.to?.toLowerCase() !== address.toLowerCase()) {
+                if (txDetails.from?.toLowerCase() !== address.toLowerCase() &&
+                  txDetails.to?.toLowerCase() !== address.toLowerCase()) {
                   continue;
                 }
 
@@ -1872,7 +1874,7 @@ class BlockchainService {
                   `receipt-${chain}-${txHash}`,
                   async () => await provider.getTransactionReceipt(txHash)
                 );
-                
+
                 const txData = {
                   ...txDetails,
                   value: txDetails.value,
@@ -1902,7 +1904,7 @@ class BlockchainService {
       } else {
         console.log(`  ○ ${config.name}: No recent txs`);
       }
-      
+
       return transactions;
     } catch (error: any) {
       if (error?.message?.includes('Rate limit')) {
@@ -1931,12 +1933,12 @@ class BlockchainService {
     if (!address) return [];
 
     const cacheKey = `${address}-txs`;
-    
+
     // Clear cache if force refresh requested
     if (forceRefresh) {
       this.clearTransactionCache(address);
     }
-    
+
     // Check cache first
     const cached = this.transactionCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < this.TX_CACHE_DURATION) {
@@ -1956,13 +1958,13 @@ class BlockchainService {
 
     try {
       const transactions = await requestPromise;
-      
+
       // Cache the results
       this.transactionCache.set(cacheKey, {
         transactions,
         timestamp: Date.now()
       });
-      
+
       return transactions;
     } finally {
       // Clean up pending request
@@ -1974,7 +1976,7 @@ class BlockchainService {
   async getCustomNetworkTransactions(address: string, network: CustomNetwork): Promise<Transaction[]> {
     try {
       console.log(`📡 Fetching transactions from custom network ${network.name} via backend`);
-      
+
       const response = await fetch(`${BACKEND_API_URL}/api/transactions/custom/${address}`, {
         method: 'POST',
         headers: {
@@ -1987,24 +1989,24 @@ class BlockchainService {
         }),
         signal: AbortSignal.timeout(30000), // 30 second timeout
       });
-      
+
       if (!response.ok) {
         throw new Error(`Backend API error: ${response.status}`);
       }
-      
+
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || 'Failed to fetch from backend');
       }
-      
+
       console.log(`📊 Backend returned ${data.transactions?.length || 0} transactions for ${network.name}`);
-      
+
       // Transform backend response to match our Transaction interface
       const transactions: Transaction[] = (data.transactions || []).map((tx: any) => {
         const value = tx.value !== null && tx.value !== undefined ? parseFloat(tx.value) : 0;
         const valueFormatted = value > 0 ? value.toFixed(6) : '0';
-        
+
         // Parse timestamp
         let txTimestamp: number;
         if (tx.metadata?.blockTimestamp) {
@@ -2017,14 +2019,14 @@ class BlockchainService {
         } else {
           txTimestamp = Math.floor(Date.now() / 1000);
         }
-        
+
         const asset = tx.asset || network.symbol;
-        
+
         // Get transaction status from backend txStatus field
-        const txStatus: 'success' | 'pending' | 'failed' = 
-          tx.txStatus === 'failed' ? 'failed' : 
-          tx.txStatus === 'pending' ? 'pending' : 'success';
-        
+        const txStatus: 'success' | 'pending' | 'failed' =
+          tx.txStatus === 'failed' ? 'failed' :
+            tx.txStatus === 'pending' ? 'pending' : 'success';
+
         return {
           hash: tx.hash,
           from: tx.from || '',
@@ -2038,14 +2040,14 @@ class BlockchainService {
           date: this.formatDate(txTimestamp),
           timestamp: txTimestamp,
           blockNumber: tx.blockNum ? parseInt(tx.blockNum, 16) : 0,
-          type: (!tx.to || tx.to === null) ? 'contract-deployment' : 
-                (tx.category === 'erc20' || tx.category === 'erc721' || tx.category === 'erc1155') ? 'contract-interaction' : 'transfer',
+          type: (!tx.to || tx.to === null) ? 'contract-deployment' :
+            (tx.category === 'erc20' || tx.category === 'erc721' || tx.category === 'erc1155') ? 'contract-interaction' : 'transfer',
           direction: tx.direction as 'sent' | 'received',
           isContractCreation: !tx.to || tx.to === null,
           contractAddress: tx.contractAddress || '',
         };
       });
-      
+
       return transactions;
     } catch (error) {
       console.error(`❌ Failed to fetch transactions for ${network.name}:`, error);
@@ -2056,18 +2058,18 @@ class BlockchainService {
   // Internal method to fetch transactions (including custom networks)
   private async fetchTransactionsInternal(address: string): Promise<Transaction[]> {
     console.log(`🔍 Starting transaction fetch for ${address}...`);
-    
+
     // Try backend API first (Alchemy-powered - most comprehensive)
     let backendFailed = false;
     try {
       const backendTxs = await this.getTransactionsFromBackend(address);
       // If we get here, backend succeeded (even if 0 transactions)
       console.log(`✅ Backend API succeeded: ${backendTxs.length} transactions found`);
-      
+
       // Also fetch from custom networks
       const customNetworks = this.getActiveCustomNetworks();
       const customTxs: Transaction[] = [];
-      
+
       for (const network of customNetworks) {
         try {
           const txs = await this.getCustomNetworkTransactions(address, network);
@@ -2076,36 +2078,36 @@ class BlockchainService {
           console.error(`Error fetching custom network ${network.name}:`, error);
         }
       }
-      
+
       // Combine and sort all transactions
       const allTxs = [...backendTxs, ...customTxs].sort((a, b) => b.timestamp - a.timestamp);
       console.log(`✅ Total transactions (default + custom): ${allTxs.length}`);
-      
+
       return allTxs;
     } catch (error) {
       // Only fall back if backend actually failed/errored
       console.log(`⚠️ Backend API failed, falling back to explorers...`);
       backendFailed = true;
     }
-    
+
     // Only reach here if backend failed
     if (!backendFailed) {
       return [];
     }
-    
+
     const activeConfigs = this.getActiveConfigs();
     const chains = Object.entries(activeConfigs);
-    
+
     console.log(`🔍 Searching transactions across ${chains.length} chains...`);
-    
+
     const allTxs: Transaction[] = [];
-    
+
     // Fetch from chains sequentially to avoid rate limiting
     for (const [key, config] of chains) {
       try {
         // Try explorer API first (silent - no logs if it fails)
         const explorerTxs = await this.getTransactionsFromExplorer(address, key, config);
-        
+
         if (explorerTxs.length > 0) {
           allTxs.push(...explorerTxs);
         } else {
@@ -2114,7 +2116,7 @@ class BlockchainService {
           const rpcTxs = await this.getTransactions(address, key, config, 50);
           allTxs.push(...rpcTxs);
         }
-        
+
         // Small delay between chain requests
         await new Promise(resolve => setTimeout(resolve, 50));
       } catch (error) {
@@ -2136,7 +2138,7 @@ class BlockchainService {
 
     // Sort by timestamp (most recent first)
     const sortedTxs = allTxs.sort((a, b) => b.timestamp - a.timestamp);
-    
+
     console.log(`✅ Found ${sortedTxs.length} total transactions (sorted by timestamp)`);
     return sortedTxs;
   }
@@ -2157,9 +2159,9 @@ class BlockchainService {
   // Format timestamp to readable date
   private formatDate(timestamp: number): string {
     const date = new Date(timestamp * 1000);
-    const options: Intl.DateTimeFormatOptions = { 
-      year: 'numeric', 
-      month: 'short', 
+    const options: Intl.DateTimeFormatOptions = {
+      year: 'numeric',
+      month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
@@ -2170,30 +2172,30 @@ class BlockchainService {
   // Get total portfolio value
   async getTotalValue(address: string): Promise<number> {
     if (!address) return 0;
-    
+
     try {
       const balances = await this.getAllBalances(address);
-      
+
       // Sum up the numeric USD values (includes testnet balances calculated at mainnet prices)
       const total = balances.reduce((sum, balance) => {
         const value = balance.usdValueNum;
-        
+
         // Skip if value is undefined, null, or invalid
         if (value === undefined || value === null || isNaN(value) || !isFinite(value) || value < 0) {
           console.warn(`Skipping invalid balance value for ${balance.chain}:`, value);
           return sum;
         }
-        
+
         // Add with proper precision
         return Number((sum + value).toFixed(2));
       }, 0);
-      
+
       // Ensure total is a valid number and round to 2 decimals
       if (isNaN(total) || !isFinite(total) || total < 0) {
         console.error('Invalid total portfolio value:', total);
         return 0;
       }
-      
+
       // Return with proper precision (2 decimal places)
       return Number(total.toFixed(2));
     } catch (error) {
@@ -2210,7 +2212,7 @@ class BlockchainService {
 
     // Normalize hash (ensure it starts with 0x)
     const normalizedHash = txHash.startsWith('0x') ? txHash : `0x${txHash}`;
-    
+
     // Validate hash format (should be 66 characters: 0x + 64 hex chars)
     if (!/^0x[0-9a-fA-F]{64}$/.test(normalizedHash)) {
       throw new Error('Invalid transaction hash format');
@@ -2228,7 +2230,7 @@ class BlockchainService {
         if (!provider) continue;
 
         console.log(`🔎 Checking ${config.name}...`);
-        
+
         // Try to get transaction and receipt
         const [tx, receipt] = await Promise.all([
           provider.getTransaction(normalizedHash).catch(() => null),
@@ -2237,12 +2239,12 @@ class BlockchainService {
 
         if (tx || receipt) {
           console.log(`✅ Transaction found on ${config.name}!`);
-          
+
           // Parse transaction details
           const value = tx?.value ? parseFloat(ethers.formatEther(tx.value)) : 0;
           const gasPrice = tx?.gasPrice ? ethers.formatUnits(tx.gasPrice, 'gwei') : '0';
           const gasUsed = receipt?.gasUsed ? receipt.gasUsed.toString() : tx?.gasLimit?.toString() || '0';
-          
+
           // Determine transaction status
           let status: 'success' | 'pending' | 'failed' = 'pending';
           if (receipt) {
@@ -2306,7 +2308,7 @@ class BlockchainService {
       try {
         const provider = new ethers.JsonRpcProvider(network.rpcUrl);
         console.log(`🔎 Checking custom network ${network.name}...`);
-        
+
         const [tx, receipt] = await Promise.all([
           provider.getTransaction(normalizedHash).catch(() => null),
           provider.getTransactionReceipt(normalizedHash).catch(() => null)
@@ -2314,10 +2316,10 @@ class BlockchainService {
 
         if (tx || receipt) {
           console.log(`✅ Transaction found on ${network.name}!`);
-          
+
           const value = tx?.value ? parseFloat(ethers.formatEther(tx.value)) : 0;
           const gasUsed = receipt?.gasUsed ? receipt.gasUsed.toString() : tx?.gasLimit?.toString() || '0';
-          
+
           let status: 'success' | 'pending' | 'failed' = 'pending';
           if (receipt) {
             status = receipt.status === 1 ? 'success' : 'failed';
@@ -2380,15 +2382,15 @@ class BlockchainService {
     // Check if it's a custom network first
     const customNetworks = getCustomNetworks();
     const customNetwork = customNetworks.find(n => n.name === chainName);
-    
+
     if (customNetwork && customNetwork.explorerUrl) {
       // Ensure explorer URL ends with /tx/ if it doesn't already
-      const baseUrl = customNetwork.explorerUrl.endsWith('/') 
-        ? `${customNetwork.explorerUrl}tx/` 
+      const baseUrl = customNetwork.explorerUrl.endsWith('/')
+        ? `${customNetwork.explorerUrl}tx/`
         : `${customNetwork.explorerUrl}/tx/`;
       return `${baseUrl}${txHash}`;
     }
-    
+
     const explorerMap: Record<string, string> = {
       // Mainnet
       'Ethereum': 'https://etherscan.io/tx/',
@@ -2417,7 +2419,7 @@ class BlockchainService {
       'Base Sepolia': 'https://sepolia.basescan.org/tx/',
       'Avalanche Fuji': 'https://testnet.snowtrace.io/tx/',
     };
-    
+
     const baseUrl = explorerMap[chainName] || 'https://etherscan.io/tx/';
     return `${baseUrl}${txHash}`;
   }

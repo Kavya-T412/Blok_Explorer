@@ -1,4 +1,4 @@
-const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY || 'ivn1pyvI9XKDlq_0bKxTj';
+const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY;
 
 const ALCHEMY_ENDPOINTS = {
   // Mainnet

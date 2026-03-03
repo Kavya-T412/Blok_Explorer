@@ -1,4 +1,5 @@
-﻿const express = require('express');
+﻿require('dotenv').config();
+const express = require('express');
 const cors = require('cors');
 const { rubicSwapService } = require('./swap');
 const { getGasPrices } = require('./gasEstimate');
