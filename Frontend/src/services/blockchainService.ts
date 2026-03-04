@@ -685,7 +685,7 @@ const ALL_CONFIGS = [...Object.entries(MAINNET_CONFIGS), ...Object.entries(TESTN
 const PRICE_API_COINGECKO = 'https://api.coingecko.com/api/v3/simple/price';
 const PRICE_API_COINCAP = 'https://api.coincap.io/v2/assets';
 const PRICE_API_CRYPTOCOMPARE = 'https://min-api.cryptocompare.com/data/price';
-const BACKEND_API_URL = 'http://localhost:3001'; // Backend transaction history API
+const BACKEND_API_URL = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:3001'; // Backend transaction history API
 
 // Block explorer API domains for all supported chains
 const API_DOMAINS: Record<number, string> = {
