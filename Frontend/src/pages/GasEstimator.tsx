@@ -39,7 +39,7 @@ interface GasPricesResponse {
   [key: string]: GasPrice;
 }
 
-const BACKEND_URL = 'http://localhost:3001';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:3001';
 const REFRESH_INTERVAL = 30000; // 30 seconds
 
 // Native token prices in USD (approximate; covers all supported chains)

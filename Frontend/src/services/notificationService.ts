@@ -6,7 +6,7 @@ import { toast } from 'sonner';
  * Connects to the backend Socket.io server and listens for events.
  */
 
-const SOCKET_URL = 'http://localhost:3001';
+const SOCKET_URL = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:3001';
 
 export interface Notification {
     id: string;
@@ -53,7 +53,7 @@ class NotificationService {
 
     private setupSocket() {
         console.log('🔌 Connecting to notification server...');
-        this.socket = io(this.SOCKET_URL);
+        this.socket = io(SOCKET_URL);
 
         this.socket.on('connect', () => {
             console.log('✅ Connected to notification server');
@@ -126,7 +126,7 @@ class NotificationService {
         if (!walletAddress || !webhookUrl) return;
 
         try {
-            const response = await fetch(`${this.SOCKET_URL}/api/save-webhook`, {
+            const response = await fetch(`${SOCKET_URL}/api/save-webhook`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ walletAddress, webhookUrl })
