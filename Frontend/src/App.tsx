@@ -12,8 +12,11 @@ import Swap from "./pages/Swap";
 import Notifications from "./pages/Notifications";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
+import Documentation from "./pages/Documentation";
+import GettingStarted from "./pages/GettingStarted";
 import { WagmiProvider } from 'wagmi';
 import { wagmiAdapter } from './lib/reownAppKit';
+import ScrollToTop from "./components/ScrollToTop";
 
 import { useEffect } from "react";
 import { notificationService } from "./services/notificationService";
@@ -34,6 +37,7 @@ const App = () => {
             <Toaster />
             <Sonner />
             <BrowserRouter>
+              <ScrollToTop />
               {/* Global animated background — same as Swap page */}
               <div className="squid-bg-wrapper">
                 <div className="squid-wave" />
@@ -46,6 +50,8 @@ const App = () => {
                 <Route path="/swap" element={<Swap />} />
                 <Route path="/notifications" element={<Notifications />} />
                 <Route path="/settings" element={<Settings />} />
+                <Route path="/documentation" element={<Documentation />} />
+                <Route path="/getting-started" element={<GettingStarted />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Routes>

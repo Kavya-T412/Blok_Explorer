@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Iosevka+Charon+Mono:wght@400;700&display=swap');
+
 /* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
 All colors MUST be HSL.
 */
@@ -51,6 +53,7 @@ All colors MUST be HSL.
 
   body {
     @apply text-foreground transition-colors duration-300;
+    font-family: 'Iosevka Charon Mono', 'JetBrains Mono', 'Fira Code', monospace;
     background: transparent;
     min-height: 100vh;
   }
@@ -135,4 +138,9 @@ All colors MUST be HSL.
   .squid-btn-primary:disabled {
     @apply opacity-50 cursor-not-allowed scale-100;
   }
+}
+
+/* Custom Font Utility */
+.font-iosevka {
+  font-family: 'Iosevka Charon Mono', 'JetBrains Mono', 'Fira Code', monospace;
 }

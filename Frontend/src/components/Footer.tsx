@@ -1,4 +1,5 @@
-import { Github, Twitter, MessageCircle } from 'lucide-react';
+import { Github, Twitter, Linkedin } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const Footer = () => {
   return (
@@ -15,24 +16,22 @@ const Footer = () => {
           <div>
             <h4 className="text-sm font-semibold mb-4">Quick Links</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li><a href="#" className="hover:text-primary transition-colors">Documentation</a></li>
-              <li><a href="#" className="hover:text-primary transition-colors">API</a></li>
-              <li><a href="#" className="hover:text-primary transition-colors">Terms of Service</a></li>
-              <li><a href="#" className="hover:text-primary transition-colors">Privacy Policy</a></li>
+              <li><Link to="/documentation" className="hover:text-primary transition-colors">Documentation</Link></li>
+              <li><Link to="/documentation#api" className="hover:text-primary transition-colors">API</Link></li>
             </ul>
           </div>
 
           <div>
             <h4 className="text-sm font-semibold mb-4">Connect</h4>
             <div className="flex gap-4">
-              <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
+              <a href="https://github.com/Kavya-T412/Blok_Explorer.git" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary transition-colors">
                 <Github className="w-5 h-5" />
               </a>
-              <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
+              <a href="https://x.com/tkavya402" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary transition-colors">
                 <Twitter className="w-5 h-5" />
               </a>
-              <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
-                <MessageCircle className="w-5 h-5" />
+              <a href="https://www.linkedin.com/in/kavya-t-9990b2315/" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary transition-colors">
+                <Linkedin className="w-5 h-5" />
               </a>
             </div>
           </div>

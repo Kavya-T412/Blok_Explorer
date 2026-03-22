@@ -76,6 +76,9 @@ const Landing = () => {
             <Button asChild size="lg" className="text-lg px-8 glow-border animate-glow-pulse">
               <NavLink to="/connect">Connect Wallet</NavLink>
             </Button>
+            <Button asChild size="lg" variant="outline" className="text-lg px-8">
+              <NavLink to="/getting-started">Getting Started Guide</NavLink>
+            </Button>
           </motion.div>
         </div>
       </section>
@@ -135,7 +138,7 @@ const Landing = () => {
               Connect your wallet and start exploring the blockchain
             </p>
             <Button asChild size="lg" className="text-lg px-8">
-              <NavLink to="/connect">Connect Wallet Now</NavLink>
+              <NavLink to="/getting-started">View Guide</NavLink>
             </Button>
           </motion.div>
         </div>
