@@ -1,4 +1,5 @@
-﻿const fetch = require('node-fetch');
+const fetch = require('node-fetch');
+const { NETWORK_CONFIGS, TESTNET_TOKENS, UNISWAP_V3_ROUTERS, WRAPPED_NATIVE } = require('./networkconfig');
 
 const RUBIC_API_BASE = 'https://api-v2.rubic.exchange/api';
 const REFERRER = 'rubic.exchange';
@@ -63,6 +64,55 @@ async function rubicPost(path, body) {
   return data;
 }
 
+// ---- Price Helpers ------------------------------------------------------------
+const COIN_IDS = {
+  ETH: 'ethereum', WETH: 'ethereum',
+  MATIC: 'matic-network', WMATIC: 'matic-network', POL: 'matic-network',
+  TBNB: 'binancecoin', WBNB: 'binancecoin', BNB: 'binancecoin',
+  BUSD: 'binance-usd',
+  AVAX: 'avalanche-2', WAVAX: 'avalanche-2',
+  SOL: 'solana', WSOL: 'solana',
+  APT: 'aptos',
+  USDC: 'usd-coin',
+  USDT: 'tether',
+  DAI: 'dai'
+};
+
+const priceCache = {};
+const CACHE_TTL = 60000; // 1 minute
+
+async function getTokenPriceUsd(symbol) {
+  const sym = symbol.toUpperCase();
+  if (sym === 'USDC' || sym === 'USDT' || sym === 'DAI' || sym === 'BUSD') return 1.0;
+  const id = COIN_IDS[sym];
+  if (!id) return 1.0;
+
+  if (priceCache[id] && Date.now() - priceCache[id].timestamp < CACHE_TTL) {
+    return priceCache[id].price;
+  }
+
+  try {
+    const res = await fetch(`https://api.coincap.io/v2/assets/${id}`);
+    const data = await res.json();
+    if (data && data.data && data.data.priceUsd) {
+      const price = parseFloat(data.data.priceUsd);
+      priceCache[id] = { price, timestamp: Date.now() };
+      return price;
+    }
+  } catch (e) {
+    try {
+      const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`);
+      const data = await res.json();
+      if (data && data[id] && data[id].usd) {
+        const price = data[id].usd;
+        priceCache[id] = { price, timestamp: Date.now() };
+        return price;
+      }
+    } catch(err) {}
+  }
+  return priceCache[id]?.price || 1.0;
+}
+
 // ---- Helpers ------------------------------------------------------------------
 
 /**
@@ -73,6 +123,35 @@ function normalizeRoute(r, srcTokenAmount) {
   if (!r || typeof r !== 'object') return r;
   const est = r.estimate || {};
   const pctFee = r.fees?.percentFees;
+
+  // Gas extraction: Rubic v2 nesting can be r.fees.gasTokenFees.gas.totalUsdAmount 
+  // or sometimes r.fees.gasTokenFees.totalUsdAmount depending on route type.
+  // We sum up gas, protocol, and provider fees for a more complete "Gas/Fees" view.
+  const gas = parseFloat(r.fees?.gasTokenFees?.gas?.totalUsdAmount || 0);
+  const protocol = parseFloat(r.fees?.gasTokenFees?.protocol?.fixedUsdAmount || 0);
+  const provider = parseFloat(r.fees?.gasTokenFees?.provider?.fixedUsdAmount || 0);
+
+  // Also calculate percentage fees in USD if possible
+  let pctFeeUsd = 0;
+  if (pctFee && pctFee.percent > 0) {
+    const fromAmount = parseFloat(srcTokenAmount || r.tokens?.from?.amount || 0);
+    const fromPrice = parseFloat(r.tokens?.from?.price || 0);
+    if (fromAmount > 0 && fromPrice > 0) {
+      pctFeeUsd = (fromAmount * fromPrice * pctFee.percent) / 100;
+    }
+  }
+
+  let gasUsd = gas + protocol + provider + pctFeeUsd;
+
+  // Fallback to estimate.gasUsd if gasUsd is still 0
+  if (gasUsd === 0 && est.gasUsd) {
+    gasUsd = parseFloat(est.gasUsd);
+  }
+
+  // Time extraction: durationInMinutes is usually what Rubic provides
+  const duration = est.durationInMinutes != null ? parseFloat(est.durationInMinutes) : (r.durationInMinutes != null ? parseFloat(r.durationInMinutes) : null);
+  const estimatedTime = duration !== null ? duration * 60 : undefined;
+
   return {
     id: r.id,
     provider: r.providerType || r.provider || 'Unknown',
@@ -82,12 +161,13 @@ function normalizeRoute(r, srcTokenAmount) {
     toAmountMin: est.destinationTokenMinAmount || r.toAmountMin || '0',
     toAmountUsd: est.destinationUsdAmount ?? 0,
     priceImpact: est.priceImpact ?? null,
-    estimatedTime: est.durationInMinutes != null ? est.durationInMinutes * 60 : undefined,
     fees: pctFee ? [{
       nativeTokenAddress: pctFee.token?.address || '',
       percent: pctFee.percent || 0,
       tokenSymbol: pctFee.token?.symbol || '',
     }] : [],
+    gasUsd,
+    estimatedTime,
     tags: [],
     // preserve raw fields needed for swap execution
     transaction: r.transaction,
@@ -105,23 +185,52 @@ class RubicSwapService {
    * @returns {Promise<Array>}
    */
   async getSupportedChains(includeTestnets = false) {
-    const data = await rubicGet('/info/chains', {
-      includeTestnets: String(includeTestnets),
-    });
-    const chains = Array.isArray(data) ? data : (data.chains || []);
-    return chains.map((c) => ({
-      id: c.id || null,
-      blockchainName: c.name,
-      displayName: c.name,
-      image: c.image || null,
-      type: c.type || 'EVM',
-      proxyAvailable: c.proxyAvailable || false,
-      testnet: c.testnet || false,
-      providers: {
-        crossChain: c.providers?.crossChain || [],
-        onChain: c.providers?.onChain || [],
-      },
-    }));
+    let chains = [];
+    try {
+      const data = await rubicGet('/info/chains', {
+        includeTestnets: 'false',
+      });
+      const fetchedChains = Array.isArray(data) ? data : (data.chains || []);
+      chains = fetchedChains.map((c) => ({
+        id: c.id || null,
+        blockchainName: c.name,
+        displayName: c.name,
+        image: c.image || null,
+        type: c.type || 'EVM',
+        proxyAvailable: c.proxyAvailable || false,
+        testnet: c.testnet || false,
+        providers: {
+          crossChain: c.providers?.crossChain || [],
+          onChain: c.providers?.onChain || [],
+        },
+      }));
+    } catch (err) {
+      console.warn('[RubicSwapService] Failed to fetch mainnet chains from Rubic, using fallback:', err.message);
+    }
+
+    if (includeTestnets) {
+      const testnets = Object.keys(NETWORK_CONFIGS)
+        .filter(k => NETWORK_CONFIGS[k].type === 'testnet')
+        .map(k => {
+          const c = NETWORK_CONFIGS[k];
+          return {
+            id: parseInt(k),
+            blockchainName: c.name.toUpperCase().replace(/ /g, '_'),
+            displayName: c.name,
+            image: null,
+            type: 'EVM', // Force EVM so the frontend Swap component includes them in the list
+            proxyAvailable: true,
+            testnet: true,
+            providers: {
+              crossChain: ['Xswapink'],
+              onChain: ['Xswapink'],
+            },
+          };
+        });
+      return [...chains, ...testnets];
+    }
+
+    return chains;
   }
 
   /**
@@ -133,8 +242,18 @@ class RubicSwapService {
    * @returns {Promise<Array>}
    */
   async getTokens(blockchain, search = '', page = 1, pageSize = 50) {
+    const blockchainUpper = blockchain.toUpperCase();
+    if (TESTNET_TOKENS[blockchainUpper]) {
+      let tokens = TESTNET_TOKENS[blockchainUpper];
+      if (search) {
+        const s = search.toLowerCase();
+        tokens = tokens.filter(t => t.symbol.toLowerCase().includes(s) || t.name.toLowerCase().includes(s) || t.address.toLowerCase() === s);
+      }
+      return tokens;
+    }
+
     const params = {
-      network: blockchain.toUpperCase(),
+      network: blockchainUpper,
       page: String(page),
       pageSize: String(pageSize),
     };
@@ -160,12 +279,81 @@ class RubicSwapService {
     if (!srcTokenAddress || !srcTokenBlockchain || !dstTokenAddress || !dstTokenBlockchain || !srcTokenAmount) {
       throw new Error('Missing required parameters for quoteAll');
     }
+
+    const srcIsTestnet = !!TESTNET_TOKENS[srcTokenBlockchain.toUpperCase()];
+    const dstIsTestnet = !!TESTNET_TOKENS[dstTokenBlockchain.toUpperCase()];
+
+    if (srcIsTestnet || dstIsTestnet) {
+      const isCrossChain = srcTokenBlockchain.toUpperCase() !== dstTokenBlockchain.toUpperCase();
+      
+      if (isCrossChain) {
+        throw new Error('Testnet bridging is not supported.');
+      }
+
+      let srcSymbol = 'ETH';
+      let dstSymbol = 'ETH';
+      const srcList = TESTNET_TOKENS[srcTokenBlockchain.toUpperCase()];
+      if (srcList) {
+         const t = srcList.find(x => x.address.toLowerCase() === srcTokenAddress.toLowerCase() || (x.address === '0x0000000000000000000000000000000000000000' && srcTokenAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'));
+         if (t) srcSymbol = t.symbol;
+      }
+      const dstList = TESTNET_TOKENS[dstTokenBlockchain.toUpperCase()];
+      if (dstList) {
+         const t = dstList.find(x => x.address.toLowerCase() === dstTokenAddress.toLowerCase() || (x.address === '0x0000000000000000000000000000000000000000' && dstTokenAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'));
+         if (t) dstSymbol = t.symbol;
+      }
+
+      const isWrapOrUnwrap = 
+         (srcSymbol === 'ETH' && dstSymbol === 'WETH') ||
+         (srcSymbol === 'WETH' && dstSymbol === 'ETH') ||
+         (srcSymbol === 'MATIC' && dstSymbol === 'WMATIC') ||
+         (srcSymbol === 'WMATIC' && dstSymbol === 'MATIC') ||
+         (srcSymbol === 'TBNB' && dstSymbol === 'WBNB') ||
+         (srcSymbol === 'WBNB' && dstSymbol === 'TBNB') ||
+         (srcSymbol === 'AVAX' && dstSymbol === 'WAVAX') ||
+         (srcSymbol === 'WAVAX' && dstSymbol === 'AVAX') ||
+         (srcSymbol === dstSymbol);
+
+      let exchangeRate = 1;
+      let srcUsdPrice = 1;
+
+      if (!isWrapOrUnwrap) {
+         const srcPrice = await getTokenPriceUsd(srcSymbol);
+         const dstPrice = await getTokenPriceUsd(dstSymbol);
+         srcUsdPrice = srcPrice;
+         if (dstPrice > 0) {
+            exchangeRate = srcPrice / dstPrice;
+         }
+      }
+
+      const exactOutput = srcTokenAmount * exchangeRate;
+      const simulatedOutput = exactOutput * 0.99;
+      const minOutput = exactOutput * 0.98;
+      
+      const mockRoute = {
+        id: 'testnet_mock_route_' + Date.now(),
+        provider: 'Xswapink',
+        type: 'on-chain',
+        toAmount: String(simulatedOutput),
+        toAmountMin: String(minOutput),
+        durationInMinutes: 0.5,
+        fees: {
+          percentFees: { percent: 1.0 }
+        },
+        tokens: {
+          from: { amount: srcTokenAmount, price: srcUsdPrice }
+        }
+      };
+      return [normalizeRoute(mockRoute, srcTokenAmount)];
+    }
+
     const result = await rubicPost('/routes/quoteAll', {
       srcTokenAddress,
       srcTokenBlockchain: srcTokenBlockchain.toUpperCase(),
       dstTokenAddress,
       dstTokenBlockchain: dstTokenBlockchain.toUpperCase(),
       srcTokenAmount: String(srcTokenAmount),
+      fromAddress: params.fromAddress || undefined,
       referrer: REFERRER,
     });
     let routes;
@@ -195,6 +383,7 @@ class RubicSwapService {
       dstTokenAddress,
       dstTokenBlockchain: dstTokenBlockchain.toUpperCase(),
       srcTokenAmount: String(srcTokenAmount),
+      fromAddress: params.fromAddress || undefined,
       referrer: REFERRER,
     });
     return normalizeRoute(best, String(srcTokenAmount));
@@ -211,6 +400,95 @@ class RubicSwapService {
       slippage = 0.01,
     } = params;
     if (!id || !fromAddress) throw new Error('Route id and fromAddress are required');
+
+    if (id.startsWith('testnet_mock_route')) {
+      const srcBlockchainUpper = srcTokenBlockchain.toUpperCase();
+      const srcConfigKey = Object.keys(NETWORK_CONFIGS).find(k => NETWORK_CONFIGS[k].name.toUpperCase().replace(/ /g, '_') === srcBlockchainUpper);
+      const uniswapRouter = srcConfigKey ? UNISWAP_V3_ROUTERS[srcConfigKey] : '0x0000000000000000000000000000000000000000';
+      const isNative = srcTokenAddress.toLowerCase() === '0x0000000000000000000000000000000000000000' || srcTokenAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+
+      const { ethers } = require('ethers');
+
+      // Find decimals to convert human-readable amount to Wei
+      let decimals = 18;
+      if (TESTNET_TOKENS[srcBlockchainUpper]) {
+        const tokenInfo = TESTNET_TOKENS[srcBlockchainUpper].find(t => t.address.toLowerCase() === srcTokenAddress.toLowerCase());
+        if (tokenInfo) decimals = tokenInfo.decimals;
+      }
+
+      let amountInWei = '0';
+      try {
+        amountInWei = ethers.parseUnits(String(srcTokenAmount), decimals).toString();
+      } catch (e) {
+        amountInWei = '1000000000000000000'; // fallback
+      }
+
+      // Generate valid Uniswap V3 exactInputSingle calldata
+      const dstBlockchainUpper = dstTokenBlockchain.toUpperCase();
+      const dstConfigKey = Object.keys(NETWORK_CONFIGS).find(k => NETWORK_CONFIGS[k].name.toUpperCase().replace(/ /g, '_') === dstBlockchainUpper);
+      const isDstNative = dstTokenAddress.toLowerCase() === '0x0000000000000000000000000000000000000000' || dstTokenAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+
+      const tokenIn = isNative ? (WRAPPED_NATIVE[srcConfigKey] || '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14') : srcTokenAddress;
+      const tokenOut = isDstNative ? (WRAPPED_NATIVE[dstConfigKey || srcConfigKey] || '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14') : dstTokenAddress;
+
+      let validData = '0x';
+      let txTo = uniswapRouter;
+      let txApproval = uniswapRouter;
+
+      if (tokenIn.toLowerCase() === tokenOut.toLowerCase()) {
+        // Universal Native Wrap or Unwrap logic (ETH->WETH, MATIC->WMATIC, AVAX->WAVAX, etc.)
+        const WRAPPED_NATIVE_ABI = [
+          'function deposit() payable',
+          'function withdraw(uint256 wad)'
+        ];
+        const wrappedNativeIface = new ethers.Interface(WRAPPED_NATIVE_ABI);
+        txTo = tokenIn; // Wrapped Native Contract
+        txApproval = tokenIn; // Wrapped Native Contract
+
+        try {
+          if (isNative) {
+            // Native -> Wrapped Native (Wrap)
+            validData = wrappedNativeIface.encodeFunctionData('deposit');
+          } else if (isDstNative) {
+            // Wrapped Native -> Native (Unwrap)
+            validData = wrappedNativeIface.encodeFunctionData('withdraw', [amountInWei]);
+          }
+        } catch (e) {
+          console.error('Error generating Wrapped Native calldata:', e);
+        }
+      } else {
+        // Standard Swap logic
+        const IRouterABI = ['function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) payable returns (uint256 amountOut)'];
+        const iface = new ethers.Interface(IRouterABI);
+
+        try {
+          validData = iface.encodeFunctionData('exactInputSingle', [{
+            tokenIn: tokenIn,
+            tokenOut: tokenOut,
+            fee: 3000,
+            recipient: receiverAddress || fromAddress,
+            amountIn: amountInWei,
+            amountOutMinimum: 0,
+            sqrtPriceLimitX96: 0
+          }]);
+        } catch (e) {
+          console.error('Error generating Uniswap calldata:', e);
+        }
+      }
+
+      const isWrapOrUnwrap = tokenIn.toLowerCase() === tokenOut.toLowerCase();
+
+      return {
+        transaction: {
+          to: txTo,
+          data: validData,
+          value: isNative ? amountInWei : '0',
+          approvalAddress: isNative || isWrapOrUnwrap ? null : txApproval,
+          isWrapOrUnwrap: isWrapOrUnwrap
+        }
+      };
+    }
+
     return rubicPost('/routes/swap', {
       srcTokenAddress,
       srcTokenBlockchain: srcTokenBlockchain.toUpperCase(),
@@ -234,9 +512,113 @@ class RubicSwapService {
   }
 }
 
+// ---- XswapinkSwapService -----------------------------------------------------
+// Wraps RubicSwapService to provide Xswapink-branded best route selection.
+
+class XswapinkSwapService extends RubicSwapService {
+
+  /**
+   * Fetch all available swap routes and mark the 'Xswapink Best Route'.
+   */
+  async getQuoteAll(params) {
+    console.log(`[Xswapink] Fetching quotes for ${params.srcTokenBlockchain} -> ${params.dstTokenBlockchain}`);
+    const routes = await super.getQuoteAll(params);
+    if (!routes || routes.length === 0) {
+      console.log(`[Xswapink] No routes found.`);
+      return routes;
+    }
+
+    // Selection Criteria: 
+    // 1. Liquidity (Max toAmount)
+    // 2. Speed (Min estimatedTime)
+    // 3. Gas/Fees (Min percent fees)
+
+    // Normalize values for scoring (0 to 1 range)
+    const maxToAmount = Math.max(...routes.map(r => parseFloat(r.toAmount) || 0));
+    const minTime = Math.min(...routes.map(r => r.estimatedTime || 999999));
+    const minFee = Math.min(...routes.map(r => r.fees?.[0]?.percent || 0.5));
+
+    const scoredRoutes = routes.map(route => {
+      const toAmount = parseFloat(route.toAmount) || 0;
+      const speed = route.estimatedTime || 999999;
+      const fee = route.fees?.[0]?.percent || 0.5;
+
+      // Score: higher is better
+      // Liquidity weight: 0.5, Speed weight: 0.3, Fee weight: 0.2
+      const liquidityScore = maxToAmount > 0 ? (toAmount / maxToAmount) : 0;
+      const speedScore = speed > 0 ? (minTime / speed) : 0;
+      const feeScore = fee > 0 ? (minFee / fee) : 0;
+
+      const totalScore = (liquidityScore * 0.5) + (speedScore * 0.3) + (feeScore * 0.2);
+      return { ...route, xswapinkScore: totalScore };
+    });
+
+    // Sort by Xswapink score
+    scoredRoutes.sort((a, b) => b.xswapinkScore - a.xswapinkScore);
+
+    // DEBUG: Log first route estimate
+    if (scoredRoutes.length > 0) {
+      console.log(`[Xswapink] Top route estimate:`, JSON.stringify(scoredRoutes[0].estimate || scoredRoutes[0].rawEstimate, null, 2));
+    }
+
+    // Set Xswapink as the provider for the best one
+    if (scoredRoutes.length > 0) {
+      console.log(`[Xswapink] Best route identified. Provider: ${scoredRoutes[0].provider}, Score: ${scoredRoutes[0].xswapinkScore}`);
+      scoredRoutes[0].provider = 'Xswapink';
+      scoredRoutes[0].isXswapinkBest = true; // Still keep internal flag for backend logic
+    }
+
+    return scoredRoutes;
+  }
+
+  /**
+   * Override getSwapData to route through Xswapink contract if selected.
+   */
+  async getSwapData(params) {
+    const { isXswapinkRoute, id } = params;
+    const data = await super.getSwapData(params);
+
+    const isTestnetMock = id && id.startsWith('testnet_mock_route');
+
+    if (isXswapinkRoute && !isTestnetMock) {
+      const contractAddress = process.env.XSWAPINK_CONTRACT_ADDRESS || '0x0000000000000000000000000000000000000000';
+
+      if (data.transaction) {
+        return {
+          ...data,
+          transaction: {
+            ...data.transaction,
+            xswapinkInfo: {
+              contract: contractAddress,
+              originalTo: data.transaction.to,
+              originalData: data.transaction.data,
+              message: "Transaction will be routed through Xswapink protocol"
+            }
+          }
+        };
+      } else {
+        return {
+          ...data,
+          xswapinkInfo: {
+            contract: contractAddress,
+            originalTo: data.to,
+            originalData: data.data,
+            message: "Transaction will be routed through Xswapink protocol"
+          }
+        };
+      }
+    }
+
+    return data;
+  }
+}
+
 const rubicSwapService = new RubicSwapService();
+const xswapinkService = new XswapinkSwapService();
 
 module.exports = {
   RubicSwapService,
+  XswapinkSwapService,
   rubicSwapService,
+  xswapinkService,
 };

@@ -21,6 +21,65 @@ const ALCHEMY_ENDPOINTS = {
 
 // Quoter and Router information moved to Rubic API (swap.js)
 
+// Shared Uniswap V3 Testnet Router
+const UNISWAP_V3_ROUTERS = {
+  11155111: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9', // Sepolia
+  80002: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9',    // Amoy
+  97: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9',       // BSC Testnet
+  421614: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9',   // Arbitrum Sepolia
+  11155420: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9', // OP Sepolia
+  84532: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9',    // Base Sepolia
+  43113: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9',    // Avalanche Fuji
+  900001: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9',   // Mock Solana Routing via Xswapink EVM relay
+  900002: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9'    // Mock Aptos Routing via Xswapink EVM relay
+};
+
+const TESTNET_TOKENS = {
+  'SEPOLIA': [
+    { symbol: 'ETH', address: '0x0000000000000000000000000000000000000000', decimals: 18, name: 'Ethereum', rank: 1, image: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png' },
+    { symbol: 'WETH', address: '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14', decimals: 18, name: 'Wrapped Ether', rank: 2 },
+    { symbol: 'USDC', address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', decimals: 6, name: 'USD Coin', rank: 3 }
+  ],
+  'POLYGON_AMOY': [
+    { symbol: 'MATIC', address: '0x0000000000000000000000000000000000000000', decimals: 18, name: 'Matic', rank: 1, image: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png' },
+    { symbol: 'WMATIC', address: '0x360ad4f9a9A8EFe9A8DCB5f461c4Cc1047E1Dcf9', decimals: 18, name: 'Wrapped Matic', rank: 2 },
+    { symbol: 'USDC', address: '0x21cEaCc498305c6c2b1de95632a9df6ED21B1Cdc', decimals: 6, name: 'USD Coin', rank: 3 }
+  ],
+  'BSC_TESTNET': [
+    { symbol: 'tBNB', address: '0x0000000000000000000000000000000000000000', decimals: 18, name: 'Testnet BNB', rank: 1, image: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png' },
+    { symbol: 'WBNB', address: '0xae13d989daC2f0dEbFf460aC112a837C89BAa7cd', decimals: 18, name: 'Wrapped BNB', rank: 2 },
+    { symbol: 'BUSD', address: '0xaB1a4d4f1D656d2450692D237fdD6C7f9146e814', decimals: 18, name: 'BUSD', rank: 3 }
+  ],
+  'ARBITRUM_SEPOLIA': [
+    { symbol: 'ETH', address: '0x0000000000000000000000000000000000000000', decimals: 18, name: 'Ethereum', rank: 1, image: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png' },
+    { symbol: 'WETH', address: '0x980B62Da83eFf3D4576C647993b0c1D7faf17c73', decimals: 18, name: 'Wrapped Ether', rank: 2 },
+    { symbol: 'USDC', address: '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d', decimals: 6, name: 'USD Coin', rank: 3 }
+  ],
+  'OPTIMISM_SEPOLIA': [
+    { symbol: 'ETH', address: '0x0000000000000000000000000000000000000000', decimals: 18, name: 'Ethereum', rank: 1, image: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png' },
+    { symbol: 'WETH', address: '0x420000000000000000000000000000000000000006', decimals: 18, name: 'Wrapped Ether', rank: 2 },
+    { symbol: 'USDC', address: '0x5fd84259d66Cd46123540766Be93DFE6D43130D7', decimals: 6, name: 'USD Coin', rank: 3 }
+  ],
+  'BASE_SEPOLIA': [
+    { symbol: 'ETH', address: '0x0000000000000000000000000000000000000000', decimals: 18, name: 'Ethereum', rank: 1, image: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png' },
+    { symbol: 'WETH', address: '0x420000000000000000000000000000000000000006', decimals: 18, name: 'Wrapped Ether', rank: 2 },
+    { symbol: 'USDC', address: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', decimals: 6, name: 'USD Coin', rank: 3 }
+  ],
+  'AVALANCHE_FUJI': [
+    { symbol: 'AVAX', address: '0x0000000000000000000000000000000000000000', decimals: 18, name: 'Avalanche', rank: 1, image: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png' },
+    { symbol: 'WAVAX', address: '0xd00ae08403B9bbb9124bB305C09058E32C39A48c', decimals: 18, name: 'Wrapped AVAX', rank: 2 },
+    { symbol: 'USDC', address: '0x5425890298aed601595a70AB815c96711a31Bc65', decimals: 6, name: 'USD Coin', rank: 3 }
+  ],
+  'SOLANA_DEVNET': [
+    { symbol: 'SOL', address: '0x0000000000000000000000000000000000000000', decimals: 9, name: 'Solana', rank: 1, image: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png' },
+    { symbol: 'WSOL', address: 'So11111111111111111111111111111111111111112', decimals: 9, name: 'Wrapped SOL', rank: 2 },
+    { symbol: 'USDC', address: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU', decimals: 6, name: 'USD Coin', rank: 3 }
+  ],
+  'APTOS_TESTNET': [
+    { symbol: 'APT', address: '0x0000000000000000000000000000000000000000', decimals: 8, name: 'Aptos', rank: 1, image: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/aptos/info/logo.png' },
+    { symbol: 'USDC', address: '0x43417434fd869edee76cca2a4d2301e528a1551b1d719b75c350c3c97d15b8b9::coins::USDC', decimals: 6, name: 'USD Coin', rank: 3 }
+  ]
+};
 
 const WRAPPED_NATIVE = {
   // Mainnet
@@ -221,6 +280,24 @@ const NETWORK_CONFIGS = {
     explorer: 'https://testnet.snowtrace.io',
     type: 'testnet',
     defaultDex: 'uniswapV3'
+  },
+  900001: {
+    name: 'Solana Devnet',
+    symbol: 'SOL',
+    rpcUrl: 'https://api.devnet.solana.com',
+    fallbackRpcUrls: [],
+    explorer: 'https://explorer.solana.com/?cluster=devnet',
+    type: 'testnet',
+    defaultDex: 'uniswapV3' // Mock route
+  },
+  900002: {
+    name: 'Aptos Testnet',
+    symbol: 'APT',
+    rpcUrl: 'https://fullnode.testnet.aptoslabs.com/v1',
+    fallbackRpcUrls: [],
+    explorer: 'https://explorer.aptoslabs.com/?network=testnet',
+    type: 'testnet',
+    defaultDex: 'uniswapV3' // Mock route
   }
 };
 
@@ -229,5 +306,7 @@ module.exports = {
   ALCHEMY_ENDPOINTS,
   WRAPPED_NATIVE,
   STABLECOINS,
-  NETWORK_CONFIGS
+  NETWORK_CONFIGS,
+  UNISWAP_V3_ROUTERS,
+  TESTNET_TOKENS
 };

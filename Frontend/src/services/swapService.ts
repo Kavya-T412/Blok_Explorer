@@ -1,4 +1,4 @@
-﻿const API_BASE_URL = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:3001';
+const API_BASE_URL = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:3001';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,7 +41,10 @@ export interface RubicRoute {
     percent: number;
     tokenSymbol: string;
   }[];
+  gasUsd?: number;
   tags?: string[];
+  isXswapinkBest?: boolean;
+  xswapinkScore?: number;
   transaction?: unknown;      // raw swap tx data (populated by /routes/swap)
   useRubicContract?: boolean;
   [key: string]: unknown;
@@ -53,6 +56,12 @@ export interface RubicTransactionData {
   to: string;                 // contract address
   value: string;              // native token value (wei as string)
   approvalAddress?: string;   // spender to approve ERC-20 allowance for
+  xswapinkInfo?: {
+    contract: string;
+    originalTo: string;
+    originalData: string;
+    message: string;
+  };
 }
 
 export interface QuoteAllParams {
@@ -61,6 +70,7 @@ export interface QuoteAllParams {
   dstTokenAddress: string;
   dstTokenBlockchain: string;
   srcTokenAmount: string;
+  fromAddress?: string;
 }
 
 export interface SwapDataParams extends QuoteAllParams {
@@ -69,6 +79,7 @@ export interface SwapDataParams extends QuoteAllParams {
   receiverAddress?: string;
   /** Slippage tolerance as decimal fraction, e.g. 0.01 = 1% (Rubic max 0.5). */
   slippage?: number;
+  isXswapinkRoute?: boolean;
 }
 
 // ─── RubicSwapService ─────────────────────────────────────────────────────────

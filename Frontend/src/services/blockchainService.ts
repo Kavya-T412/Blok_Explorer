@@ -678,7 +678,7 @@ const TESTNET_CONFIGS = {
 };
 
 // Combined configurations for chain ID lookup
-const ALL_CONFIGS = [...Object.entries(MAINNET_CONFIGS), ...Object.entries(TESTNET_CONFIGS)]
+export const ALL_CONFIGS = [...Object.entries(MAINNET_CONFIGS), ...Object.entries(TESTNET_CONFIGS)]
   .reduce((acc, [key, config]) => ({ ...acc, [config.chainId]: { ...config, key } }), {} as Record<number, any>);
 
 // API endpoints and constants
@@ -1480,6 +1480,16 @@ class BlockchainService {
 
     this.pendingBalanceRequests.set(cacheKey, requestPromise);
     return requestPromise;
+  }
+
+  // Get balance by numeric chain ID (convenience for Swap)
+  async getBalanceByChainId(address: string, chainId: number): Promise<Balance | null> {
+    const config = ALL_CONFIGS[chainId];
+    if (!config) {
+      console.warn(`No config found for chainId: ${chainId}`);
+      return null;
+    }
+    return this.getBalance(address, config.key, config);
   }
 
   // Get balances across all chains (including custom networks)

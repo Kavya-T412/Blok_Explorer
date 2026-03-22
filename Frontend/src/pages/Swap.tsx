@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label';
 import { ethers } from 'ethers';
 import { rubicSwapService, RubicChain, RubicToken, RubicRoute } from '@/services/swapService';
 import { notificationService } from '@/services/notificationService';
+import { blockchainService, ALL_CONFIGS } from '@/services/blockchainService';
 
 // ── Slippage presets (as decimal fractions) ───────────────────────────────────
 const SLIPPAGE_PRESETS = [
@@ -138,6 +139,11 @@ const ERC20_ABI = [
   'function allowance(address owner, address spender) view returns (uint256)',
 ];
 
+const XSWAPINK_ABI = [
+  'function swap(address _router, address _srcToken, uint256 _amount, bytes calldata _data) external payable',
+  'function bridge(address _bridgeContract, address _srcToken, uint256 _amount, uint256 _dstChainId, bytes calldata _data) external payable',
+];
+
 // Comprehensive chain icon map (Rubic blockchainName → icon URL)
 // ── Chain display names (Rubic blockchainName → human-readable label) ────────
 const CHAIN_DISPLAY_NAMES: Record<string, string> = {
@@ -186,6 +192,26 @@ const CHAIN_SLUG_OVERRIDES: Record<string, string> = {
   HARMONY: 'harmony', DOGECOIN: 'dogechain', SIA: 'siacoin',
   HORIZEN_EON: 'horizen eon', BERACHAIN: 'berachain bex',
   MANTA_PACIFIC: 'manta pacific',
+  SEPOLIA: 'ethereum', HOODI: 'ethereum',
+  POLYGON_AMOY: 'polygon',
+  BSC_TESTNET: 'bsc',
+  ARBITRUM_SEPOLIA: 'arbitrum',
+  OPTIMISM_SEPOLIA: 'optimism',
+  BASE_SEPOLIA: 'base',
+  AVALANCHE_FUJI: 'avalanche',
+  FANTOM_TESTNET: 'fantom',
+  GNOSIS_CHIADO: 'gnosis',
+  ZKSYNC_SEPOLIA: 'zksync era',
+  LINEA_SEPOLIA: 'linea',
+  SCROLL_SEPOLIA: 'scroll',
+  MANTLE_SEPOLIA: 'mantle',
+  BLAST_SEPOLIA: 'blast',
+  CELO_ALFAJORES: 'celo',
+  MODE_SEPOLIA: 'mode',
+  MANTA_SEPOLIA: 'manta pacific',
+  SOLANA_DEVNET: 'solana',
+  SOLANA_TESTNET: 'solana',
+  APTOS_TESTNET: 'aptos',
 };
 
 // Build a DeFiLlama icon URL from a slug
@@ -198,6 +224,13 @@ const getChainIcon = (blockchainName: string, apiImage?: string | null): string 
   const key = blockchainName.toUpperCase();
   const slug = CHAIN_SLUG_OVERRIDES[key] ?? key.toLowerCase().replace(/_/g, ' ');
   return dlIcon(slug);
+};
+
+const getTokenIcon = (token: RubicToken | null, chain: RubicChain | null): string | undefined => {
+  if (!token) return undefined;
+  if (token.image) return token.image;
+  if (!chain) return undefined;
+  return getChainIcon(chain.blockchainName, chain.image);
 };
 
 // Human-readable chain display name
@@ -213,6 +246,7 @@ const formatChainName = (chain: { blockchainName: string; displayName?: string }
 
 function formatProvider(p: string | undefined | null): string {
   if (!p) return 'Unknown';
+  if (p === 'Xswapink') return 'Xswapink';
   return p.split('_').map(w => w[0] + w.slice(1).toLowerCase()).join(' ');
 }
 
@@ -382,7 +416,7 @@ function TokenPickerInner({ chain, selected, onSelect, open, setOpen }: { chain:
         <button className="h-10 pl-2 pr-4 rounded-r-full border border-squid-border bg-white/50 dark:bg-black/20 hover:bg-squid-primary/10 transition-colors flex items-center gap-2 min-w-[100px]">
           {selected ? (
             <>
-              {selected.image && <img src={selected.image} alt="" className="w-6 h-6 rounded-full" />}
+              {getTokenIcon(selected, chain) && <img src={getTokenIcon(selected, chain)} alt="" className="w-6 h-6 rounded-full object-cover" />}
               <span className="font-bold text-sm tracking-tight">{selected.symbol}</span>
             </>
           ) : (
@@ -417,7 +451,7 @@ function TokenPickerInner({ chain, selected, onSelect, open, setOpen }: { chain:
               onClick={() => { onSelect(t); setOpen(false); }}
               className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-squid-primary/10 transition-all text-left"
             >
-              {t.image ? <img src={t.image} alt="" className="w-10 h-10 rounded-full" /> : <div className="w-10 h-10 rounded-full bg-gray-200" />}
+              {getTokenIcon(t, chain) ? <img src={getTokenIcon(t, chain)} alt="" className="w-10 h-10 rounded-full object-cover" /> : <div className="w-10 h-10 rounded-full bg-gray-200" />}
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-sm">{t.symbol}</p>
                 <p className="text-xs text-gray-400 truncate">{t.name}</p>
@@ -460,8 +494,16 @@ function RouteCard({ route, dstSymbol, selected, onSelect, isBest }: { route: Ru
         </div>
       </div>
       <div className="flex items-center gap-4 text-[11px] font-medium text-gray-400">
-        <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> ~{Math.round((route.estimatedTime || 0) / 60)}m</span>
-        <span className="flex items-center gap-1"><Info className="w-3 h-3" /> Gas included</span>
+        <span className="flex items-center gap-1">
+          <Clock className="w-3 h-3" />
+          {route.estimatedTime !== undefined ? (
+            route.estimatedTime < 60 ? '< 1m' : `~${Math.round(route.estimatedTime / 60)}m`
+          ) : 'N/A'}
+        </span>
+        <span className="flex items-center gap-1">
+          <Info className="w-3 h-3" />
+          Gas: {route.gasUsd && route.gasUsd > 0 ? `$${route.gasUsd.toFixed(2)}` : 'Calculated in wallet'}
+        </span>
       </div>
     </button>
   );
@@ -487,19 +529,63 @@ export default function Swap() {
   const [previewAmount, setPreviewAmount] = useState<string>('');
   const [previewUsd, setPreviewUsd] = useState<number>(0);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [srcBalance, setSrcBalance] = useState<string>('0.00');
+  const [loadingBalance, setLoadingBalance] = useState(false);
+  const [lastTxLink, setLastTxLink] = useState<string | null>(null);
   const previewDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load Initial Data
   useEffect(() => {
-    rubicSwapService.getChains(false).then(list => {
-      const evm = list.filter(c => c.type === 'EVM' || !c.type);
+    const isTestnet = localStorage.getItem('useTestnet') === 'true';
+    rubicSwapService.getChains(isTestnet).then(list => {
+      // Rubic returns all chains if includeTestnets=true, so we filter manually
+      const filteredByMode = isTestnet ? list.filter(c => c.testnet) : list.filter(c => !c.testnet);
+      const evm = filteredByMode.filter(c => c.type === 'EVM' || !c.type);
+
       setChains(evm);
+
       if (evm.length > 0) {
-        setSrcChain(evm[0]);
-        setDstChain(evm[1] || evm[0]);
+        // Sensible defaults for testnets
+        if (isTestnet) {
+          const sepolia = evm.find(c => c.id === 11155111 || c.blockchainName.toUpperCase() === 'SEPOLIA');
+          const amoy = evm.find(c => c.id === 80002 || c.blockchainName.toUpperCase() === 'AMOY');
+          setSrcChain(sepolia || evm[0]);
+          setDstChain(amoy || evm[Math.min(1, evm.length - 1)]);
+        } else {
+          setSrcChain(evm[0]);
+          setDstChain(evm[Math.min(1, evm.length - 1)]);
+        }
       }
     });
   }, []);
+
+  // Fetch balance for the source token
+  useEffect(() => {
+    const updateBalance = async () => {
+      if (!walletAddress || !srcChain || !srcToken) {
+        setSrcBalance('0.00');
+        return;
+      }
+
+      setLoadingBalance(true);
+      try {
+        console.log(`[Swap] Fetching balance for ${srcToken.symbol} on ${srcChain.blockchainName}`);
+        const bal = await blockchainService.getBalanceByChainId(walletAddress, srcChain.id!);
+        if (bal) {
+          setSrcBalance(bal.balance);
+        } else {
+          setSrcBalance('0.00');
+        }
+      } catch (err) {
+        console.error('[Swap] Balance fetch error:', err);
+        setSrcBalance('0.00');
+      } finally {
+        setLoadingBalance(false);
+      }
+    };
+
+    updateBalance();
+  }, [walletAddress, srcChain, srcToken]);
 
   // Debounced preview: fetch the best quote as the user types (600 ms delay)
   useEffect(() => {
@@ -512,6 +598,12 @@ export default function Swap() {
       return;
     }
     previewDebounceRef.current = setTimeout(async () => {
+      const isTestnetMode = localStorage.getItem('useTestnet') === 'true';
+      if (isTestnetMode && srcChain?.id !== dstChain?.id) {
+        setPreviewAmount('');
+        setPreviewUsd(0);
+        return;
+      }
       setPreviewLoading(true);
       try {
         const res = await rubicSwapService.getQuoteAll({
@@ -520,6 +612,7 @@ export default function Swap() {
           dstTokenAddress: dstToken.address,
           dstTokenBlockchain: dstChain.blockchainName,
           srcTokenAmount: srcAmount,
+          fromAddress: walletAddress || undefined,
         });
         if (res.length > 0) {
           setPreviewAmount(res[0].toAmount);
@@ -538,7 +631,17 @@ export default function Swap() {
   }, [srcAmount, srcToken, dstToken, srcChain, dstChain, showRoutes]);
 
   const fetchRoutes = async () => {
+    setLastTxLink(null);
     if (!srcToken || !dstToken || !srcAmount) return;
+
+    const isTestnetMode = localStorage.getItem('useTestnet') === 'true';
+    if (isTestnetMode && srcChain?.id !== dstChain?.id) {
+      toast({ title: 'Bridging Not Supported', description: 'Cross-chain bridging is not supported on testnets. Please select the same network for both source and destination.', variant: 'destructive' });
+      setRoutes([]);
+      setShowRoutes(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await rubicSwapService.getQuoteAll({
@@ -547,6 +650,7 @@ export default function Swap() {
         dstTokenAddress: dstToken.address,
         dstTokenBlockchain: dstChain!.blockchainName,
         srcTokenAmount: srcAmount,
+        fromAddress: walletAddress || undefined,
       });
       setRoutes(res);
       setSelectedRoute(res[0]);
@@ -570,7 +674,29 @@ export default function Swap() {
     }
     setLoading(true);
     try {
-      const provider = new ethers.BrowserProvider(win.ethereum as ethers.Eip1193Provider);
+      let provider = new ethers.BrowserProvider(win.ethereum as ethers.Eip1193Provider);
+
+      const network = await provider.getNetwork();
+      if (network.chainId !== BigInt(srcChain.id!)) {
+        toast({ title: 'Switching Network', description: `Please confirm the switch to ${formatChainName(srcChain)} in your wallet.` });
+        try {
+          await win.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: `0x${srcChain.id!.toString(16)}` }],
+          });
+          // Small delay to allow wallet internal state to update
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          provider = new ethers.BrowserProvider(win.ethereum as ethers.Eip1193Provider);
+        } catch (switchError: any) {
+          if (switchError.code === 4902) {
+            toast({ title: 'Network Not Added', description: `Please add ${formatChainName(srcChain)} to your wallet before swapping.`, variant: 'destructive' });
+            setLoading(false);
+            return;
+          }
+          throw new Error('Failed to switch network: ' + (switchError.message || 'User rejected'));
+        }
+      }
+
       const signer = await provider.getSigner();
 
       toast({ title: 'Refreshing quote...', description: 'Getting latest price' });
@@ -597,6 +723,7 @@ export default function Swap() {
         fromAddress: walletAddress,
         receiverAddress: walletAddress,
         slippage,
+        isXswapinkRoute: selectedRoute.isXswapinkBest || false,
       });
 
       if (!swapData || !swapData.transaction) {
@@ -606,7 +733,10 @@ export default function Swap() {
       const tx = swapData.transaction;
       const spenderAddress = tx.approvalAddress || tx.to;
 
-      if (srcToken.address !== NATIVE_ADDRESS && spenderAddress) {
+      const isNativeSource = srcToken.address === NATIVE_ADDRESS || srcToken.address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+
+
+      if (!isNativeSource && spenderAddress) {
         const tokenContract = new ethers.Contract(srcToken.address, ERC20_ABI, signer);
         const srcAmtBig = ethers.parseUnits(srcAmount, srcToken.decimals);
         const allowance: bigint = await tokenContract.allowance(walletAddress, spenderAddress) as bigint;
@@ -622,13 +752,84 @@ export default function Swap() {
       }
 
       toast({ title: 'Confirm swap in your wallet' });
+
+      let txTo = tx.to;
+      let txData = tx.data;
+
+      if (tx.xswapinkInfo) {
+        console.log('[Xswapink] Routing through contract:', tx.xswapinkInfo.contract);
+        const xswapContract = new ethers.Contract(tx.xswapinkInfo.contract, XSWAPINK_ABI, signer);
+
+        // Check if it's a bridge or swap
+        if (selectedRoute.type === 'cross-chain') {
+          // bridge(address _bridgeContract, address _srcToken, uint256 _amount, uint256 _dstChainId, bytes calldata _data)
+          // Note: dstChainId is needed. We can get it from dstChain.chainId
+          const encodedData = xswapContract.interface.encodeFunctionData('bridge', [
+            tx.xswapinkInfo.originalTo,
+            srcToken.address === NATIVE_ADDRESS ? ethers.ZeroAddress : srcToken.address,
+            ethers.parseUnits(srcAmount, srcToken.decimals),
+            BigInt(dstChain?.id || 0),
+            tx.xswapinkInfo.originalData
+          ]);
+          txTo = tx.xswapinkInfo.contract;
+          txData = encodedData;
+        } else {
+          // swap(address _router, address _srcToken, uint256 _amount, bytes calldata _data)
+          const encodedData = xswapContract.interface.encodeFunctionData('swap', [
+            tx.xswapinkInfo.originalTo,
+            srcToken.address === NATIVE_ADDRESS ? ethers.ZeroAddress : srcToken.address,
+            ethers.parseUnits(srcAmount, srcToken.decimals),
+            tx.xswapinkInfo.originalData
+          ]);
+          txTo = tx.xswapinkInfo.contract;
+          txData = encodedData;
+        }
+      }
+
+      const isTestnetMode = localStorage.getItem('useTestnet') === 'true';
+
+      const feeData = await provider.getFeeData();
+      let maxFeePerGas = feeData.maxFeePerGas;
+      let maxPriorityFeePerGas = feeData.maxPriorityFeePerGas;
+      let gasPrice = feeData.gasPrice;
+
+      // Polygon Amoy has a strict minimum 25+ gwei gas price, so enforce 30 gwei
+      const MIN_GAS = 30000000000n;
+
+      if (isTestnetMode && srcChain.id === 80002) {
+        if (maxFeePerGas && maxFeePerGas < MIN_GAS) maxFeePerGas = MIN_GAS;
+        if (maxPriorityFeePerGas && maxPriorityFeePerGas < MIN_GAS) maxPriorityFeePerGas = MIN_GAS;
+        if (gasPrice && gasPrice < MIN_GAS) gasPrice = MIN_GAS;
+      }
+
       const txResponse = await signer.sendTransaction({
-        to: tx.to,
-        data: tx.data,
+        to: txTo,
+        data: txData,
         value: tx.value ? BigInt(tx.value) : 0n,
+        ...(maxFeePerGas ? {
+          maxFeePerGas,
+          maxPriorityFeePerGas
+        } : { gasPrice }),
+        ...(isTestnetMode ? { gasLimit: 500000n } : {})
       });
 
-      toast({ title: 'Swap submitted!', description: `Tx: ${txResponse.hash.slice(0, 10)}...` });
+      const explorerUrl = ALL_CONFIGS[srcChain.id || 1]?.explorer;
+      const txLink = explorerUrl ? `${explorerUrl}/tx/${txResponse.hash}` : null;
+      setLastTxLink(txLink);
+
+      toast({
+        title: 'Swap submitted!',
+        description: (
+          <div className="flex flex-col gap-1 mt-1">
+            <span>Tx: {txResponse.hash.slice(0, 10)}...</span>
+            {txLink && (
+              <a href={txLink} target="_blank" rel="noreferrer" className="text-squid-primary hover:underline flex items-center gap-1 text-xs font-medium">
+                View on Explorer <ExternalLink className="w-3 h-3" />
+              </a>
+            )}
+          </div>
+        )
+      });
 
       // Send real notification for submission
       notificationService.sendNotification({
@@ -640,7 +841,19 @@ export default function Swap() {
       const receipt = await txResponse.wait(1);
 
       if (receipt.status === 1) {
-        toast({ title: 'Transfer Confirmed!', description: 'Transaction mined with 1 block.' });
+        toast({
+          title: 'Transfer Confirmed!',
+          description: (
+            <div className="flex flex-col gap-1 mt-1">
+              <span>Transaction mined within 1 block.</span>
+              {txLink && (
+                <a href={txLink} target="_blank" rel="noreferrer" className="text-squid-primary hover:underline flex items-center gap-1 text-xs font-medium">
+                  View on Explorer <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </div>
+          )
+        });
 
         // The backend will continue tracking up to 12 blocks and notify via Socket.io
         notificationService.sendNotification({
@@ -707,6 +920,11 @@ export default function Swap() {
         <div className="flex items-center justify-between mb-6 px-2">
           <div className="flex items-center gap-6">
             <button className="text-xl font-bold border-b-2 border-squid-primary pb-1">Swap</button>
+            {localStorage.getItem('useTestnet') === 'true' && (
+              <Badge variant="outline" className="bg-yellow-500/10 border-yellow-500/50 text-yellow-500 font-bold uppercase text-[10px] px-2 py-0">
+                Testnet
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-3 bg-white/40 dark:bg-black/20 p-1 rounded-full border border-squid-border">
             <button className="p-2 hover:bg-white/60 dark:hover:bg-white/10 rounded-full transition-colors"><History className="w-5 h-5 text-gray-500" /></button>
@@ -749,7 +967,12 @@ export default function Swap() {
                 <div className="squid-input-area group">
                   <div className="flex justify-between items-center mb-4">
                     <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Pay</span>
-                    <span className="text-xs font-medium text-gray-400">Balance: 0.00</span>
+                    <div className="flex items-center gap-1.5">
+                      {loadingBalance && <Loader2 className="w-3 h-3 animate-spin text-squid-primary" />}
+                      <span className="text-xs font-medium text-gray-400">
+                        Balance: {srcBalance} {srcToken?.symbol}
+                      </span>
+                    </div>
                   </div>
                   <div className="flex items-center gap-4">
                     <Input
@@ -834,6 +1057,23 @@ export default function Swap() {
                 >
                   {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : (walletAddress ? 'Review Swap' : 'Connect Wallet')}
                 </button>
+
+                {/* Success Link */}
+                {lastTxLink && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-4 p-3 rounded-2xl bg-squid-primary/10 border border-squid-primary/20 flex flex-col items-center justify-center gap-2"
+                  >
+                    <div className="flex items-center gap-2 text-squid-primary font-bold text-sm">
+                      <CheckCircle2 className="w-4 h-4" />
+                      Swap Successful!
+                    </div>
+                    <a href={lastTxLink} target="_blank" rel="noreferrer" className="text-xs text-gray-400 hover:text-squid-primary hover:underline flex items-center gap-1">
+                      View transaction on Explorer <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </motion.div>
+                )}
               </motion.div>
             ) : (
               <motion.div

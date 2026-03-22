@@ -1,7 +1,7 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { rubicSwapService } = require('./swap');
+const { rubicSwapService, xswapinkService } = require('./swap');
 const { getGasPrices } = require('./gasEstimate');
 const { getTransactionHistory, fetchNetworkTransactions } = require('./txHis');
 const { initSocket } = require('./services/notificationService');
@@ -152,7 +152,7 @@ app.post('/api/rubic/quote-all', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Missing required fields: srcTokenAddress, srcTokenBlockchain, dstTokenAddress, dstTokenBlockchain, srcTokenAmount' });
     }
 
-    const routes = await rubicSwapService.getQuoteAll({
+    const routes = await xswapinkService.getQuoteAll({
       srcTokenAddress,
       srcTokenBlockchain: srcTokenBlockchain.toUpperCase(),
       dstTokenAddress,
@@ -209,7 +209,7 @@ app.post('/api/rubic/swap-data', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Missing required fields: srcTokenAddress, srcTokenBlockchain, dstTokenAddress, dstTokenBlockchain, srcTokenAmount, id, fromAddress' });
     }
 
-    const data = await rubicSwapService.getSwapData({
+    const data = await xswapinkService.getSwapData({
       srcTokenAddress,
       srcTokenBlockchain: srcTokenBlockchain.toUpperCase(),
       dstTokenAddress,
@@ -219,6 +219,7 @@ app.post('/api/rubic/swap-data', async (req, res) => {
       fromAddress,
       receiverAddress,
       slippage: Number(slippage),
+      isXswapinkRoute: req.body.isXswapinkRoute || false,
     });
 
     res.json({ success: true, data });
