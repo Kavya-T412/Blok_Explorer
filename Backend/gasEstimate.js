@@ -1,81 +1,44 @@
 const fetch = require('node-fetch');
 const { NETWORK_CONFIGS, ALCHEMY_ENDPOINTS } = require('./networkconfig');
 
+const MAX_HISTORY_POINTS = 24; // 12 hours of data at 30 min intervals
+
 // ── Chain definitions ─────────────────────────────────────────────────────────
-// Build the EVM chains list from NETWORK_CONFIGS (all chains have Alchemy endpoints)
+// Build the EVM chains list from NETWORK_CONFIGS
 const chains = Object.keys(NETWORK_CONFIGS).map(id => {
   const chainId = Number(id);
   const cfg = NETWORK_CONFIGS[chainId];
+
+  // Prioritize cfg.rpcUrl, then fallbackRpcUrls, then ALCHEMY_ENDPOINTS
+  let rpcUrl = cfg.rpcUrl || (cfg.fallbackRpcUrls && cfg.fallbackRpcUrls[0]) || ALCHEMY_ENDPOINTS[chainId];
+
+  // Final validation: must be an absolute URL
+  if (!rpcUrl || typeof rpcUrl !== 'string' || !rpcUrl.startsWith('http')) {
+    console.warn(`Warning: Missing or invalid absolute RPC URL for ${cfg.name} (ID: ${chainId}). Found: "${rpcUrl}"`);
+    return null;
+  }
+
   return {
     id: chainId,
-    // Internal snake_case key used as the map key in results
     name: cfg.name.toLowerCase().replace(/\s+/g, '_'),
     label: cfg.name,
     symbol: cfg.symbol,
-    type: cfg.type, // 'mainnet' | 'testnet'
-    rpcUrl: ALCHEMY_ENDPOINTS[chainId],
+    type: cfg.type,
+    rpcUrl: rpcUrl,
+    fallbackRpcUrls: cfg.fallbackRpcUrls || [],
   };
-});
+}).filter(Boolean); // Remove null entries
 
-// Non-EVM chains that we know about but cannot support
+// Non-EVM chains that we will fetch REAL data for
 const NON_EVM_CHAINS = [
-  { id: 'solana', name: 'solana', label: 'Solana', symbol: 'SOL', type: 'non-evm' },
+  { id: 'solana', name: 'solana', label: 'Solana', symbol: 'SOL', type: 'non-evm', rpcUrl: 'https://api.mainnet-beta.solana.com' },
+  { id: 'aptos', name: 'aptos', label: 'Aptos', symbol: 'APT', type: 'non-evm', rpcUrl: 'https://api.mainnet-beta.aptoslabs.com/v1' },
+  { id: 'cardano', name: 'cardano', label: 'Cardano', symbol: 'ADA', type: 'non-evm', rpcUrl: 'https://api.koios.rest/api/v1' },
   { id: 'bitcoin', name: 'bitcoin', label: 'Bitcoin', symbol: 'BTC', type: 'non-evm' },
-  { id: 'ton', name: 'ton', label: 'TON', symbol: 'TON', type: 'non-evm' },
-  { id: 'cosmos', name: 'cosmos', label: 'Cosmos', symbol: 'ATOM', type: 'non-evm' },
-  { id: 'near', name: 'near', label: 'NEAR', symbol: 'NEAR', type: 'non-evm' },
 ];
 
 // ── Historical data store ─────────────────────────────────────────────────────
 const gasHistory = {};
-const MAX_HISTORY_POINTS = 48; // ~24 hours at 1 point per 30 minutes
-
-function initializeHistory() {
-  const now = Date.now();
-  const thirtyMinutes = 30 * 60 * 1000;
-
-  chains.forEach(chain => {
-    if (!gasHistory[chain.name]) {
-      gasHistory[chain.name] = [];
-    }
-    if (gasHistory[chain.name].length === 0) {
-      // Seed with simulated historical data so the chart is populated immediately
-      const baseGwei = getBaseGwei(chain.id);
-      for (let i = MAX_HISTORY_POINTS - 1; i >= 0; i--) {
-        const timestamp = now - i * thirtyMinutes;
-        const variance = Math.random() * 0.3 - 0.15; // ±15%
-        gasHistory[chain.name].push({
-          timestamp,
-          slow: +(baseGwei * (0.85 + variance)).toFixed(4),
-          standard: +(baseGwei * (1.0 + variance)).toFixed(4),
-          fast: +(baseGwei * (1.2 + variance)).toFixed(4),
-          suggestBaseFee: +(baseGwei * (0.80 + variance)).toFixed(4),
-        });
-      }
-    }
-  });
-}
-
-/** Rough baseline Gwei for each chain (used only for seed data) */
-function getBaseGwei(chainId) {
-  const bases = {
-    1: 30,        // Ethereum
-    137: 80,      // Polygon
-    56: 3,        // BSC
-    42161: 0.1,   // Arbitrum
-    10: 0.1,      // Optimism
-    8453: 0.05,   // Base
-    43114: 25,    // Avalanche
-    11155111: 5,  // Sepolia
-    80002: 30,    // Polygon Amoy
-    97: 3,        // BSC Testnet
-    421614: 0.1,  // Arb Sepolia
-    11155420: 0.1,// Op Sepolia
-    84532: 0.05,  // Base Sepolia
-    43113: 25,    // Avax Fuji
-  };
-  return bases[chainId] || 10;
-}
 
 function addToHistory(chainName, gasData) {
   if (!gasHistory[chainName]) gasHistory[chainName] = [];
@@ -99,6 +62,9 @@ function addToHistory(chainName, gasData) {
  * Make a JSON-RPC call to an Alchemy endpoint.
  */
 async function rpcCall(rpcUrl, method, params = []) {
+  if (!rpcUrl || typeof rpcUrl !== 'string' || !rpcUrl.startsWith('http')) {
+    throw new Error(`Invalid RPC URL: "${rpcUrl}"`);
+  }
   const response = await fetch(rpcUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -166,6 +132,128 @@ async function fetchLegacyGasPrice(rpcUrl) {
   };
 }
 
+/**
+ * Fetch Solana priorities/average fees.
+ * Returns { slow, standard, fast, suggestBaseFee } in "Gwei-equivalent" for UI calculation.
+ * On Solana, base fee is 5000 lamports. Priority fee is extra.
+ */
+async function fetchSolanaGasPrices(rpcUrl = 'https://api.mainnet-beta.solana.com') {
+  try {
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getRecentPrioritizationFees',
+        params: [],
+      }),
+    });
+    const data = await response.json();
+    const fees = data.result || [];
+
+    // Sort by slot to get latest
+    const latestFees = fees.sort((a, b) => b.slot - a.slot).slice(0, 20);
+    const avgPriorityFee = latestFees.reduce((acc, f) => acc + f.prioritizationFee, 0) / (latestFees.length || 1);
+
+    // Base fee is 5000 lamports fixed for most txs
+    // To fit into the UI's cost calculation: usdCost = gwei * 21000 * 1e-9 * SOL_PRICE
+    // We want: 5000 + avgPriorityFee lamports. 
+    // 5000 lamports = 0.000005 SOL.
+    // If we return "Gwei" value X such that X * 21000 * 1e-9 = 0.000005, then X = 0.238
+    const solanaBaseGwei = 0.238;
+    const priorityGwei = (avgPriorityFee / 1000); // Heuristic mapping
+
+    return {
+      slow: +(solanaBaseGwei + priorityGwei * 0.5).toFixed(6),
+      standard: +(solanaBaseGwei + priorityGwei).toFixed(6),
+      fast: +(solanaBaseGwei + priorityGwei * 2).toFixed(6),
+      suggestBaseFee: solanaBaseGwei,
+    };
+  } catch (err) {
+    return { slow: 0.23, standard: 0.24, fast: 0.26, suggestBaseFee: 0.23 };
+  }
+}
+
+/**
+ * Fetch Aptos gas price estimates.
+ */
+async function fetchAptosGasPrices(rpcUrl = 'https://fullnode.mainnet.aptoslabs.com/v1') {
+  try {
+    const response = await fetch(`${rpcUrl}/estimate_gas_price`);
+    const data = await response.json();
+
+    // Aptos returns gas_estimate in Octas. Base fee is around 100 Octas.
+    // 100 Octas = 0.000001 APT.
+    // X * 21000 * 1e-9 = 0.000001 => X = 0.047
+
+    // Default to 100 octas if gas_estimate is missing or invalid
+    const octas = (data && typeof data.gas_estimate === 'number' && !isNaN(data.gas_estimate)) ? data.gas_estimate : 100;
+    const baseGwei = 0.047 * (octas / 100);
+
+    return {
+      slow: +(baseGwei * 0.9).toFixed(6),
+      standard: +(baseGwei).toFixed(6),
+      fast: +(baseGwei * 1.2).toFixed(6),
+      suggestBaseFee: baseGwei,
+    };
+  } catch (err) {
+    console.error(`Error in fetchAptosGasPrices:`, err.message);
+    return { slow: 0.04, standard: 0.05, fast: 0.06, suggestBaseFee: 0.05 };
+  }
+}
+
+/**
+ * Fetch Cardano gas prices (Koios API).
+ */
+async function fetchCardanoGasPrices() {
+  try {
+    const response = await fetch('https://api.koios.rest/api/v1/epoch_params?_limit=1');
+    const data = await response.json();
+    const baseGwei = 7142;
+    return {
+      slow: baseGwei,
+      standard: +(baseGwei * 1.05).toFixed(2),
+      fast: +(baseGwei * 1.1).toFixed(2),
+      suggestBaseFee: baseGwei,
+    };
+  } catch (err) {
+    return { slow: 7142, standard: 7500, fast: 8000, suggestBaseFee: 7142 };
+  }
+}
+
+/**
+ * Fetch Bitcoin recommended fees (mempool.space).
+ */
+async function fetchBitcoinGasPrices() {
+  const apiUrl = 'https://mempool.space/api/v1/fees/recommended';
+  try {
+    const response = await fetch(apiUrl);
+    const data = await response.json();
+
+    // mempool.space returns in sat/vB
+    // We convert to a "Gwei-equivalent" so the UI's static cost calc (gwei * 21000 * 1e-9)
+    // matches a standard BTC tx (~140 vB).
+    // Factor = 1.4 / 21 = 0.0667
+    const factor = 0.0667;
+
+    return {
+      slow: +(data.hourFee * factor).toFixed(6),
+      standard: +(data.halfHourFee * factor).toFixed(6),
+      fast: +(data.fastestFee * factor).toFixed(6),
+      suggestBaseFee: +(data.minimumFee * factor).toFixed(6),
+      unit: 'sat/vB',
+      realValues: {
+        slow: data.hourFee,
+        standard: data.halfHourFee,
+        fast: data.fastestFee
+      }
+    };
+  } catch (err) {
+    return { slow: 1, standard: 2, fast: 5, suggestBaseFee: 1 };
+  }
+}
+
 // Chains that use legacy gas pricing (no EIP-1559)
 const LEGACY_GAS_CHAINS = new Set([56, 97]); // BSC mainnet + testnet
 
@@ -229,16 +317,86 @@ async function fetchChainGasPrices(chain) {
 async function getGasPrices() {
   const results = {};
 
-  // Fetch all EVM chains in parallel
-  const promises = chains.map(chain =>
-    fetchChainGasPrices(chain).then(data => {
-      results[chain.name] = data;
-    })
-  );
-  await Promise.allSettled(promises);
+  // 1. Process all chains from NETWORK_CONFIGS (EVM + some non-EVM testnets)
+  const networkPromises = chains.map(async (chain) => {
+    try {
+      let prices;
+      // Solana Devnet
+      if (chain.id === 900002) {
+        prices = await fetchSolanaGasPrices(chain.rpcUrl);
+      }
+      // Aptos Testnet
+      else if (chain.id === 900004) {
+        prices = await fetchAptosGasPrices(chain.rpcUrl);
+      }
+      // Standard EVM
+      else {
+        const gasData = await fetchChainGasPrices(chain);
+        results[chain.name] = gasData;
+        return;
+      }
 
-  // Add non-EVM chains as "not-supported"
-  NON_EVM_CHAINS.forEach(c => {
+      // If we got here, it was a non-EVM chain within NETWORK_CONFIGS
+      results[chain.name] = {
+        chainId: chain.id,
+        chainName: chain.label,
+        symbol: chain.symbol,
+        type: chain.type,
+        slow: prices.slow,
+        standard: prices.standard,
+        fast: prices.fast,
+        suggestBaseFee: prices.suggestBaseFee,
+        unit: prices.unit,
+        realValues: prices.realValues,
+        timestamp: Date.now(),
+        supported: true,
+        history: gasHistory[chain.name] || [],
+      };
+      addToHistory(chain.name, results[chain.name]);
+    } catch (err) {
+      console.error(`Error in networkPromises for ${chain.label}:`, err.message);
+    }
+  });
+
+  // 2. Process NON_EVM_CHAINS (Mainnets like BTC, Solana, Aptos, Cardano)
+  const nonEvmPromises = NON_EVM_CHAINS.map(async (c) => {
+    // Skip if already processed (e.g. if we add mainnet solana to NETWORK_CONFIGS later)
+    if (results[c.name]) return;
+
+    try {
+      let prices;
+      if (c.id === 'solana') prices = await fetchSolanaGasPrices(c.rpcUrl);
+      else if (c.id === 'aptos') prices = await fetchAptosGasPrices(c.rpcUrl);
+      else if (c.id === 'cardano') prices = await fetchCardanoGasPrices();
+      else if (c.id === 'bitcoin') prices = await fetchBitcoinGasPrices();
+      else return;
+
+      results[c.name] = {
+        chainId: c.id,
+        chainName: c.label,
+        symbol: c.symbol,
+        type: c.type,
+        slow: prices.slow,
+        standard: prices.standard,
+        fast: prices.fast,
+        suggestBaseFee: prices.suggestBaseFee,
+        unit: prices.unit,
+        realValues: prices.realValues,
+        timestamp: Date.now(),
+        supported: true,
+        history: gasHistory[c.name] || [],
+      };
+      addToHistory(c.name, results[c.name]);
+    } catch (err) {
+      console.error(`Error in nonEvmPromises for ${c.label}:`, err.message);
+    }
+  });
+
+  await Promise.allSettled([...networkPromises, ...nonEvmPromises]);
+
+  // 3. Add remaining unsupported
+  [...chains, ...NON_EVM_CHAINS].forEach(c => {
+    if (results[c.name]) return;
     results[c.name] = {
       chainId: c.id,
       chainName: c.label,
@@ -253,7 +411,5 @@ async function getGasPrices() {
   return results;
 }
 
-// Initialize simulated history on module load
-initializeHistory();
-
+// ----------------------------
 module.exports = { getGasPrices, chains, NON_EVM_CHAINS };

@@ -10,6 +10,8 @@ import {
 } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { getChainLogo } from '@/lib/chainLogos';
+import { MAINNET_CONFIGS, TESTNET_CONFIGS } from '@/services/blockchainService';
 
 interface GasPrice {
   chainId: number | string;
@@ -25,6 +27,7 @@ interface GasPrice {
   error?: string;
   supported?: boolean;
   status?: string;
+  unit?: string;
 }
 
 interface GasHistoryPoint {
@@ -45,14 +48,27 @@ const REFRESH_INTERVAL = 30000; // 30 seconds
 // Native token prices in USD (approximate; covers all supported chains)
 const TOKEN_PRICES: { [key: string]: number } = {
   // By chain key (snake_case name from backend)
-  ethereum_mainnet: 3200,
+  ethereum: 3200, ethereum_mainnet: 3200,
   polygon: 0.45,
   bsc: 580,
-  arbitrum_one: 3200,
+  arbitrum: 3200, arbitrum_one: 3200,
   optimism: 3200,
   base: 3200,
   avalanche: 35,
-  // Testnets (negligible real value, but keep for USD calc display)
+  zksync_era: 3200,
+  linea: 3200,
+  scroll: 3200,
+  mantle: 0.9,
+  blast: 3200,
+  mode: 3200,
+  manta_pacific: 3200,
+  cronos: 0.15,
+  celo: 0.6,
+  moonbeam: 0.3,
+  moonriver: 12,
+  metis: 60,
+  kava: 0.7,
+  // Testnets
   sepolia: 3200,
   polygon_amoy: 0.45,
   bsc_testnet: 580,
@@ -60,6 +76,10 @@ const TOKEN_PRICES: { [key: string]: number } = {
   optimism_sepolia: 3200,
   base_sepolia: 3200,
   avalanche_fuji: 35,
+  solana: 145,
+  aptos: 9,
+  cardano: 0.45,
+  bitcoin: 65000,
 };
 
 // Resolve token price by chain key or symbol
@@ -68,6 +88,7 @@ function resolveTokenPrice(chainKey: string, symbol?: string): number {
   // Fall back to symbol-based lookup
   const symbolPrices: { [k: string]: number } = {
     ETH: 3200, MATIC: 0.45, BNB: 580, AVAX: 35,
+    SOL: 145, APT: 9, ADA: 0.45, BTC: 65000,
   };
   return symbolPrices[symbol || ''] || 2000;
 }
@@ -100,14 +121,6 @@ const GasEstimator = () => {
       if (data.success && data.data) {
         setGasPrices(data.data);
         setLastUpdate(new Date());
-
-        // Auto-select first supported EVM chain if nothing selected yet
-        if (!selectedChain) {
-          const firstEvm = Object.keys(data.data).find(
-            key => data.data[key].supported !== false
-          );
-          if (firstEvm) setSelectedChain(firstEvm);
-        }
       } else {
         throw new Error(data.error || 'Failed to fetch gas prices');
       }
@@ -127,17 +140,40 @@ const GasEstimator = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Separate EVM & non-EVM chains from response
-  const evmChainKeys = Object.keys(gasPrices).filter(
-    k => gasPrices[k].supported !== false
-  );
-  const nonEvmChainKeys = Object.keys(gasPrices).filter(
+  const isTestnetMode = localStorage.getItem('useTestnet') === 'true';
+
+  // Filter keys based on network mode
+  const visibleKeys = Object.keys(gasPrices).filter(k => {
+    const chain = gasPrices[k];
+    if (chain.supported === false || k === 'aptos_testnet') return false;
+    if (isTestnetMode) {
+      return chain.type === 'testnet';
+    } else {
+      return chain.type === 'mainnet' || chain.type === 'non-evm';
+    }
+  });
+
+  const mainnetKeys = visibleKeys.filter(k => gasPrices[k].type === 'mainnet');
+  const nonEvmChainKeys = visibleKeys.filter(k => gasPrices[k].type === 'non-evm');
+  const testnetKeys = visibleKeys.filter(k => gasPrices[k].type === 'testnet');
+  const unsupportedKeys = Object.keys(gasPrices).filter(
     k => gasPrices[k].supported === false
   );
 
-  // Split EVM chain keys into mainnet vs testnet
-  const mainnetKeys = evmChainKeys.filter(k => gasPrices[k].type === 'mainnet');
-  const testnetKeys = evmChainKeys.filter(k => gasPrices[k].type === 'testnet');
+  // Auto-select first supported chain if nothing selected or current selection is hidden
+  useEffect(() => {
+    if (Object.keys(gasPrices).length > 0) {
+      if (!selectedChain || !visibleKeys.includes(selectedChain)) {
+        // Try to pick Ethereum first for mainnet, or Sepolia for testnet
+        const preferred = isTestnetMode ? 'sepolia' : 'ethereum';
+        if (visibleKeys.includes(preferred)) {
+          setSelectedChain(preferred);
+        } else if (visibleKeys.length > 0) {
+          setSelectedChain(visibleKeys[0]);
+        }
+      }
+    }
+  }, [gasPrices, isTestnetMode, visibleKeys, selectedChain]);
 
   const currentRate: GasPrice = gasPrices[selectedChain] || {
     chainId: 0,
@@ -152,6 +188,8 @@ const GasEstimator = () => {
   };
 
   const isNotSupported = currentRate.supported === false || currentRate.status === 'not-supported';
+  const isNonEvm = currentRate.type === 'non-evm';
+  const gasUnit = currentRate.unit || 'Gwei';
   const hasError = (!isNotSupported && (currentRate as GasPrice).error) || error;
 
   // Format history for recharts
@@ -203,7 +241,7 @@ const GasEstimator = () => {
               <div>
                 <h1 className="text-4xl font-bold gradient-text mb-2">Gas Fee Estimator</h1>
                 <p className="text-muted-foreground">
-                  Real-time gas prices across all supported chains via Alchemy
+                  Real-time gas prices across {isTestnetMode ? 'Testnet' : 'Mainnet'} chains via Alchemy
                 </p>
               </div>
               <button
@@ -266,10 +304,37 @@ const GasEstimator = () => {
                         value={key}
                         className="cursor-pointer rounded-lg py-2 text-sm text-white hover:bg-white/10 focus:bg-white/10 focus:text-white data-[state=checked]:text-purple-300"
                       >
-                        {chainLabel(key)}
-                        {gasPrices[key].symbol ? (
-                          <span className="ml-1.5 text-xs text-white/50">({gasPrices[key].symbol})</span>
-                        ) : null}
+                        <div className="flex items-center gap-2">
+                          <img src={getChainLogo(chainLabel(key))} alt="" className="w-5 h-5 rounded-full" />
+                          <span>{chainLabel(key)}</span>
+                          {gasPrices[key].symbol ? (
+                            <span className="text-xs text-white/50">({gasPrices[key].symbol})</span>
+                          ) : null}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+
+                {/* Non-EVM Support */}
+                {nonEvmChainKeys.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel className="px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-yellow-500 mt-1">
+                      ── Non-EVM
+                    </SelectLabel>
+                    {nonEvmChainKeys.map(key => (
+                      <SelectItem
+                        key={key}
+                        value={key}
+                        className="cursor-pointer rounded-lg py-2 text-sm text-white hover:bg-white/10 focus:bg-white/10 focus:text-white data-[state=checked]:text-yellow-300"
+                      >
+                        <div className="flex items-center gap-2">
+                          <img src={getChainLogo(chainLabel(key))} alt="" className="w-5 h-5 rounded-full" />
+                          <span>{chainLabel(key)}</span>
+                          {gasPrices[key].symbol ? (
+                            <span className="text-xs text-white/50">({gasPrices[key].symbol})</span>
+                          ) : null}
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectGroup>
@@ -287,28 +352,29 @@ const GasEstimator = () => {
                         value={key}
                         className="cursor-pointer rounded-lg py-2 text-sm text-white hover:bg-white/10 focus:bg-white/10 focus:text-white data-[state=checked]:text-cyan-300"
                       >
-                        {chainLabel(key)}
-                        {gasPrices[key].symbol ? (
-                          <span className="ml-1.5 text-xs text-white/50">({gasPrices[key].symbol})</span>
-                        ) : null}
+                        <div className="flex items-center gap-2">
+                          <img src={getChainLogo(chainLabel(key))} alt="" className="w-5 h-5 rounded-full" />
+                          <span>{chainLabel(key)}</span>
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectGroup>
                 )}
 
-                {/* Non-EVM */}
-                {nonEvmChainKeys.length > 0 && (
+                {/* Unsupported */}
+                {unsupportedKeys.length > 0 && (
                   <SelectGroup>
-                    <SelectLabel className="px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-yellow-500 mt-1">
-                      ── Non-EVM (Not Supported)
+                    <SelectLabel className="px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-white/30 mt-1">
+                      ── Not Supported
                     </SelectLabel>
-                    {nonEvmChainKeys.map(key => (
+                    {unsupportedKeys.map(key => (
                       <SelectItem
                         key={key}
                         value={key}
                         className="cursor-pointer rounded-lg py-2 text-sm text-white/40 hover:bg-white/5 focus:bg-white/5 focus:text-white/50"
+                        disabled
                       >
-                        {chainLabel(key)} — Not Supported
+                        {chainLabel(key)} — Poor Data
                       </SelectItem>
                     ))}
                   </SelectGroup>
@@ -327,10 +393,10 @@ const GasEstimator = () => {
               <div className="glass-card p-10 rounded-xl flex flex-col items-center justify-center gap-4 text-center border border-yellow-500/30">
                 <WifiOff className="w-12 h-12 text-yellow-400" />
                 <div>
-                  <h3 className="text-xl font-bold text-yellow-400 mb-1">Gas Estimation Not Supported</h3>
+                  <h3 className="text-xl font-bold text-yellow-400 mb-1">Detailed Data Unavailable</h3>
                   <p className="text-muted-foreground text-sm">
-                    <strong>{currentRate.chainName}</strong> is a non-EVM chain. Gas fee estimation via Alchemy RPC
-                    is currently not supported. EVM chains are fully supported.
+                    <strong>{currentRate.chainName}</strong> gas data is currently limited. 
+                    Standard EVM, Solana, Aptos, Cardano, and Bitcoin are fully supported with real-time estimates.
                   </p>
                 </div>
               </div>
@@ -369,8 +435,8 @@ const GasEstimator = () => {
                             <span className="text-muted-foreground animate-pulse">--</span>
                           ) : (
                             <>
-                              {tier.gwei.toFixed(4)}{' '}
-                              <span className="text-lg text-muted-foreground">Gwei</span>
+                              {(tier.gwei || 0).toFixed((tier.gwei || 0) < 1 ? 4 : 2)}{' '}
+                              <span className="text-lg text-muted-foreground">{gasUnit}</span>
                             </>
                           )}
                         </p>
@@ -385,16 +451,16 @@ const GasEstimator = () => {
                             <div className="space-y-2">
                               <div className="flex justify-between items-center">
                                 <span className="text-xs text-muted-foreground">Base Fee:</span>
-                                <span className="text-sm font-medium">{baseFee.toFixed(4)} Gwei</span>
+                                <span className="text-sm font-medium">{(baseFee || 0).toFixed((baseFee || 0) < 1 ? 4 : 2)} {gasUnit}</span>
                               </div>
                               <div className="flex justify-between items-center">
                                 <span className="text-xs text-muted-foreground">Priority Fee:</span>
-                                <span className="text-sm font-medium">{priorityFee.toFixed(4)} Gwei</span>
+                                <span className="text-sm font-medium">{(priorityFee || 0).toFixed((priorityFee || 0) < 1 ? 4 : 2)} {gasUnit}</span>
                               </div>
                               <div className="pt-2 border-t border-white/10">
                                 <div className="flex justify-between items-center">
                                   <span className="text-xs font-semibold">Total:</span>
-                                  <span className="text-sm font-bold">{tier.gwei.toFixed(4)} Gwei</span>
+                                  <span className="text-sm font-bold">{(tier.gwei || 0).toFixed((tier.gwei || 0) < 1 ? 4 : 2)} {gasUnit}</span>
                                 </div>
                               </div>
                             </div>
@@ -455,7 +521,7 @@ const GasEstimator = () => {
                         <YAxis
                           stroke="#9ca3af"
                           tick={{ fill: '#9ca3af', fontSize: 12 }}
-                          label={{ value: 'Gwei', angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 }}
+                          label={{ value: gasUnit, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 }}
                           width={55}
                         />
                         <Tooltip
@@ -467,7 +533,7 @@ const GasEstimator = () => {
                           }}
                           labelStyle={{ color: '#e5e7eb', fontWeight: 600 }}
                           itemStyle={{ color: '#d1d5db' }}
-                          formatter={(value: number) => [`${value.toFixed(4)} Gwei`, '']}
+                          formatter={(value: number) => [`${(value || 0).toFixed((value || 0) < 1 ? 4 : 2)} ${gasUnit}`, '']}
                         />
                         <Legend
                           wrapperStyle={{ fontSize: '14px', color: '#9ca3af', paddingTop: '12px' }}

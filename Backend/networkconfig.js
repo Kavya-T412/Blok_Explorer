@@ -30,8 +30,19 @@ const UNISWAP_V3_ROUTERS = {
   11155420: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9', // OP Sepolia
   84532: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9',    // Base Sepolia
   43113: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9',    // Avalanche Fuji
-  900001: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9',   // Mock Solana Routing via Xswapink EVM relay
-  900002: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9'    // Mock Aptos Routing via Xswapink EVM relay
+  900002: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9',   // Solana Routing via Xswapink EVM relay
+  900004: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9'    // Aptos Routing via Xswapink EVM relay
+};
+
+// Uniswap V3 QuoterV2 addresses for Testnets
+const UNISWAP_V3_QUOTERS = {
+  11155111: '0xEd1f6473345F45b75F8179591dd5bA1888cf2FB3', // Sepolia
+  80002: '0xEd1f6473345F45b75F8179591dd5bA1888cf2FB3',    // Amoy (Using common address)
+  97: '0x78D78E420Da98ad378D7799bE8f4AF69033EB077',       // BSC Testnet
+  421614: '0x2779a0CC1c3e0E44D2542EC3e79e3864Ae93Ef0B',   // Arbitrum Sepolia
+  11155420: '0x4426685C8349453C930D93922E225914C5D65A4B', // OP Sepolia
+  84532: '0xC5290058841028F1614F3A6F0F5816cAd0df5E27',    // Base Sepolia
+  43113: '0xEd1f6473345F45b75F8179591dd5bA1888cf2FB3',    // Avalanche Fuji (Using common address)
 };
 
 const TESTNET_TOKENS = {
@@ -281,23 +292,75 @@ const NETWORK_CONFIGS = {
     type: 'testnet',
     defaultDex: 'uniswapV3'
   },
-  900001: {
-    name: 'Solana Devnet',
-    symbol: 'SOL',
-    rpcUrl: 'https://api.devnet.solana.com',
-    fallbackRpcUrls: [],
-    explorer: 'https://explorer.solana.com/?cluster=devnet',
-    type: 'testnet',
-    defaultDex: 'uniswapV3' // Mock route
+  324: {
+    name: 'zkSync Era',
+    symbol: 'ETH',
+    rpcUrl: 'https://zksync-mainnet.g.alchemy.com/v2/ivn1pyvI9XKDlq_0bKxTj',
+    fallbackRpcUrls: ['https://mainnet.era.zksync.io'],
+    explorer: 'https://explorer.zksync.io',
+    type: 'mainnet'
+  },
+  59144: {
+    name: 'Linea',
+    symbol: 'ETH',
+    rpcUrl: 'https://linea-mainnet.g.alchemy.com/v2/ivn1pyvI9XKDlq_0bKxTj',
+    fallbackRpcUrls: ['https://rpc.linea.build'],
+    explorer: 'https://lineascan.build',
+    type: 'mainnet'
+  },
+  534352: {
+    name: 'Scroll',
+    symbol: 'ETH',
+    rpcUrl: 'https://scroll-mainnet.g.alchemy.com/v2/ivn1pyvI9XKDlq_0bKxTj',
+    fallbackRpcUrls: ['https://rpc.scroll.io'],
+    explorer: 'https://scrollscan.com',
+    type: 'mainnet'
+  },
+  5000: {
+    name: 'Mantle',
+    symbol: 'MNT',
+    rpcUrl: 'https://mantle-mainnet.g.alchemy.com/v2/ivn1pyvI9XKDlq_0bKxTj',
+    fallbackRpcUrls: ['https://rpc.mantle.xyz'],
+    explorer: 'https://explorer.mantle.xyz',
+    type: 'mainnet'
+  },
+  81457: {
+    name: 'Blast',
+    symbol: 'ETH',
+    rpcUrl: 'https://blast-mainnet.g.alchemy.com/v2/ivn1pyvI9XKDlq_0bKxTj',
+    fallbackRpcUrls: ['https://rpc.blast.io'],
+    explorer: 'https://blastscan.io',
+    type: 'mainnet'
+  },
+  34443: {
+    name: 'Mode',
+    symbol: 'ETH',
+    rpcUrl: 'https://mode-mainnet.g.alchemy.com/v2/ivn1pyvI9XKDlq_0bKxTj',
+    fallbackRpcUrls: ['https://mainnet.mode.network'],
+    explorer: 'https://modescan.io',
+    type: 'mainnet'
+  },
+  169: {
+    name: 'Manta Pacific',
+    symbol: 'ETH',
+    rpcUrl: 'https://pacific-rpc.manta.network/http',
+    fallbackRpcUrls: ['https://169.rpc.thirdweb.com'],
+    explorer: 'https://pacific-explorer.manta.network',
+    type: 'mainnet'
   },
   900002: {
+    explorer: 'https://explorer.solana.com/?cluster=devnet',
+    type: 'testnet',
+    defaultDex: 'uniswapV3'
+  },
+  900004: {
     name: 'Aptos Testnet',
     symbol: 'APT',
-    rpcUrl: 'https://fullnode.testnet.aptoslabs.com/v1',
+    rpcUrl: 'https://aptos-testnet.g.alchemy.com/v2/ivn1pyvI9XKDlq_0bKxTj',
     fallbackRpcUrls: [],
     explorer: 'https://explorer.aptoslabs.com/?network=testnet',
     type: 'testnet',
-    defaultDex: 'uniswapV3' // Mock route
+    defaultDex: 'uniswapV3'
   }
 };
 
@@ -308,5 +371,6 @@ module.exports = {
   STABLECOINS,
   NETWORK_CONFIGS,
   UNISWAP_V3_ROUTERS,
+  UNISWAP_V3_QUOTERS,
   TESTNET_TOKENS
 };

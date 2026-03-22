@@ -3,7 +3,7 @@ import { getCustomNetworks, CustomNetwork, NetworkConfig } from '@/types/customN
 
 // Chain configurations with public RPC endpoints (Mainnet)
 // Using public RPC endpoints to avoid rate limiting
-const MAINNET_CONFIGS = {
+export const MAINNET_CONFIGS = {
   ethereum: {
     chainId: 1,
     name: 'Ethereum',
@@ -437,10 +437,54 @@ const MAINNET_CONFIGS = {
     decimals: 18,
     color: 'from-blue-300 to-cyan-400',
   },
+  solana: {
+    chainId: 900001,
+    name: 'Solana',
+    symbol: 'SOL',
+    rpcUrl: 'https://api.mainnet-beta.solana.com',
+    fallbackRpcUrls: [],
+    explorer: 'https://explorer.solana.com',
+    decimals: 9,
+    color: 'from-purple-500 to-green-400',
+    isEvm: false,
+  },
+  aptos: {
+    chainId: 900003,
+    name: 'Aptos',
+    symbol: 'APT',
+    rpcUrl: 'https://fullnode.mainnet.aptoslabs.com/v1',
+    fallbackRpcUrls: [],
+    explorer: 'https://explorer.aptoslabs.com',
+    decimals: 8,
+    color: 'from-zinc-700 to-zinc-900',
+    isEvm: false,
+  },
+  cardano: {
+    chainId: 900005,
+    name: 'Cardano',
+    symbol: 'ADA',
+    rpcUrl: 'https://api.koios.rest/api/v1',
+    fallbackRpcUrls: [],
+    explorer: 'https://cardanoscan.io',
+    decimals: 6,
+    color: 'from-blue-700 to-blue-900',
+    isEvm: false,
+  },
+  bitcoin: {
+    chainId: 900007,
+    name: 'Bitcoin',
+    symbol: 'BTC',
+    rpcUrl: 'https://blockchain.info',
+    fallbackRpcUrls: [],
+    explorer: 'https://www.blockchain.com/explorer',
+    decimals: 8,
+    color: 'from-orange-500 to-yellow-600',
+    isEvm: false,
+  },
 };
 
 // Chain configurations with public RPC endpoints (Testnet)
-const TESTNET_CONFIGS = {
+export const TESTNET_CONFIGS = {
   sepolia: {
     chainId: 11155111,
     name: 'Sepolia',
@@ -675,6 +719,39 @@ const TESTNET_CONFIGS = {
     decimals: 18,
     color: 'from-sky-400 to-blue-500',
   },
+  solanaDevnet: {
+    chainId: 900002,
+    name: 'Solana Devnet',
+    symbol: 'SOL',
+    rpcUrl: 'https://api.devnet.solana.com',
+    fallbackRpcUrls: [],
+    explorer: 'https://explorer.solana.com/?cluster=devnet',
+    decimals: 9,
+    color: 'from-purple-500 to-green-400',
+    isEvm: false,
+  },
+  aptosTestnet: {
+    chainId: 900004,
+    name: 'Aptos Testnet',
+    symbol: 'APT',
+    rpcUrl: 'https://fullnode.testnet.aptoslabs.com/v1',
+    fallbackRpcUrls: [],
+    explorer: 'https://explorer.aptoslabs.com/?network=testnet',
+    decimals: 8,
+    color: 'from-zinc-700 to-zinc-900',
+    isEvm: false,
+  },
+  cardanoPreprod: {
+    chainId: 900006,
+    name: 'Cardano Preprod',
+    symbol: 'ADA',
+    rpcUrl: 'https://preprod.koios.rest/api/v1',
+    fallbackRpcUrls: [],
+    explorer: 'https://preprod.cardanoscan.io',
+    decimals: 6,
+    color: 'from-blue-700 to-blue-900',
+    isEvm: false,
+  },
 };
 
 // Combined configurations for chain ID lookup
@@ -756,6 +833,10 @@ const COIN_IDS: Record<string, string> = {
   IOTX: 'iotex',
   ONE: 'harmony',
   frxETH: 'frax-ether',
+  SOL: 'solana',
+  APT: 'aptos',
+  ADA: 'cardano',
+  BTC: 'bitcoin',
 };
 
 const COINCAP_IDS: Record<string, string> = {
@@ -775,6 +856,10 @@ const COINCAP_IDS: Record<string, string> = {
   KLAY: 'klaytn',
   IOTX: 'iotex',
   ONE: 'harmony',
+  SOL: 'solana',
+  APT: 'aptos',
+  ADA: 'cardano',
+  BTC: 'bitcoin',
 };
 
 // Map testnet symbols to mainnet equivalents for price lookup
@@ -798,6 +883,10 @@ const SYMBOL_MAP: Record<string, string> = {
   'IOTX': 'IOTX',
   'ONE': 'ONE',
   'FRXETH': 'frxETH',
+  'SOL': 'SOL',
+  'APT': 'APT',
+  'ADA': 'ADA',
+  'BTC': 'BTC',
 };
 
 export interface Balance {
@@ -858,6 +947,9 @@ class BlockchainService {
     const allConfigs = { ...MAINNET_CONFIGS, ...TESTNET_CONFIGS };
     Object.entries(allConfigs).forEach(([key, config]) => {
       try {
+        // Skip provider initialization for non-EVM chains
+        if ((config as any).isEvm === false) return;
+
         // Create network object with explicit chainId
         const network = ethers.Network.from({
           name: config.name.toLowerCase().replace(/\s+/g, '-'),
@@ -901,6 +993,23 @@ class BlockchainService {
         this.detectConnectedChain();
       });
     }
+  }
+
+  // Helper to check address format
+  private isSolanaAddress(address: string): boolean {
+    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
+  }
+
+  private isAptosAddress(address: string): boolean {
+    return /^0x[a-fA-F0-9]{64}$/.test(address);
+  }
+
+  private isCardanoAddress(address: string): boolean {
+    return address.startsWith('addr1') || address.startsWith('addr_test1');
+  }
+
+  private isBitcoinAddress(address: string): boolean {
+    return /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(address) || /^(bc1)[a-z0-9]{25,39}$/.test(address);
   }
 
   // Rate-limited request wrapper with retry logic
@@ -1409,6 +1518,87 @@ class BlockchainService {
     // Create new request promise
     const requestPromise = (async () => {
       try {
+        // Handle non-EVM chains with REAL data
+        if ((config as any).isEvm === false) {
+          const isTestnet = Object.values(TESTNET_CONFIGS).some(c => c.chainId === config.chainId);
+          const price = await this.fetchPrice(config.symbol, isTestnet);
+          
+          let balanceNum = 0;
+          let rawBalance = '0';
+          
+          try {
+            if (config.name.toLowerCase().includes('solana')) {
+              if (this.isSolanaAddress(address)) {
+                const response = await fetch(config.rpcUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    jsonrpc: '2.0', id: 1, method: 'getBalance', params: [address]
+                  }),
+                });
+                const data = await response.json();
+                const lamports = data.result?.value || 0;
+                balanceNum = lamports / 1e9;
+                rawBalance = lamports.toString();
+              }
+            } else if (config.name.toLowerCase().includes('aptos')) {
+              if (this.isAptosAddress(address)) {
+                const response = await fetch(`${config.rpcUrl}/accounts/${address}/resource/0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>`);
+                if (response.ok) {
+                  const data = await response.json();
+                  const octas = data.data?.coin?.value || 0;
+                  balanceNum = octas / 1e8;
+                  rawBalance = octas.toString();
+                }
+              }
+            } else if (config.name.toLowerCase().includes('cardano')) {
+              if (this.isCardanoAddress(address)) {
+                const response = await fetch(`${config.rpcUrl}/address_info`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ _addresses: [address] }),
+                });
+                if (response.ok) {
+                  const data = await response.json();
+                  const lovelace = data[0]?.total_balance || 0;
+                  balanceNum = lovelace / 1e6;
+                  rawBalance = lovelace.toString();
+                }
+              }
+            } else if (config.name.toLowerCase().includes('bitcoin')) {
+              if (this.isBitcoinAddress(address)) {
+                const response = await fetch(`${config.rpcUrl}/rawaddr/${address}?limit=0`);
+                if (response.ok) {
+                  const data = await response.json();
+                  const satoshis = data.final_balance || 0;
+                  balanceNum = satoshis / 1e8;
+                  rawBalance = satoshis.toString();
+                }
+              }
+            }
+          } catch (e) {
+            console.error(`Error fetching ${config.name} balance:`, e);
+          }
+
+          const usdValueNum = price > 0 ? Number((balanceNum * price).toFixed(2)) : 0;
+          const formattedUsdValue = usdValueNum > 0
+            ? `$${usdValueNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            : '$0.00';
+
+          const result = {
+            chain: config.name,
+            chainId: config.chainId,
+            symbol: config.symbol,
+            balance: balanceNum.toFixed(4),
+            usdValue: isTestnet ? `${formattedUsdValue} (Testnet)` : formattedUsdValue,
+            usdValueNum,
+            color: config.color,
+            rawBalance: rawBalance,
+          };
+          this.balanceCache.set(cacheKey, { balance: result, timestamp: Date.now() });
+          return result;
+        }
+
         const provider = await this.getProviderWithFallback(chain);
         if (!provider) {
           console.warn(`No provider available for ${config.name}`);

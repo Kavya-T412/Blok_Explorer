@@ -42,9 +42,9 @@ const CHAIN_LOGO_MAP: Record<string, string> = {
   'Base Sepolia': 'base',
 
   // ── Avalanche ──
-  'Avalanche': 'avax',
-  'Avalanche C-Chain': 'avax',
-  'Avalanche Fuji': 'avax',
+  'Avalanche': 'avalanche',
+  'Avalanche C-Chain': 'avalanche',
+  'Avalanche Fuji': 'avalanche',
 
   // ── Fantom ──
   'Fantom': 'fantom',
@@ -122,8 +122,8 @@ const CHAIN_LOGO_MAP: Record<string, string> = {
 
   // ── Manta Pacific ──
   'Manta Pacific': 'manta',
-  'Manta': 'manta',
-  'Manta Sepolia': 'manta',
+  'Manta': 'manta pacific',
+  'Manta Sepolia': 'manta pacific',
 
   // ── Fraxtal ──
   'Fraxtal': 'fraxtal',
@@ -203,6 +203,34 @@ const CHAIN_LOGO_MAP: Record<string, string> = {
   // ── Filecoin ──
   'Filecoin': 'filecoin',
   'Filecoin EVM': 'filecoin',
+
+  // ── Non-EVM Chains ──
+  'Solana': 'solana',
+  'Solana Devnet': 'solana',
+  'Solana Testnet': 'solana',
+  'Cardano': 'cardano',
+  'Cardano Preprod': 'cardano',
+  'Aptos': 'aptos',
+  'Aptos Testnet': 'aptos',
+  'Bitcoin': 'bitcoin',
+  'TON': 'ton',
+  'Cosmos': 'cosmos',
+  'NEAR': 'near',
+
+  // ── Additional Rubic/Swap Chains ──
+  'ZKFair': 'zkfair',
+  'zkLink Nova': 'zklink nova',
+  'RSK': 'rsk',
+  'XRP': 'xrp',
+  'Internet Computer': 'internet computer',
+  'Boba BNB': 'boba bsc',
+  'Gravity Alpha': 'gravity alpha',
+  'Hyperliquid': 'hyperliquid',
+  'Hedera': 'hedera',
+  'DogeChain': 'dogechain',
+  'Siacoin': 'siacoin',
+  'Horizen EON': 'horizen eon',
+  'Berachain BEX': 'berachain bex',
 };
 
 const LLAMAO_BASE = 'https://icons.llamao.fi/icons/chains/rsz_';
@@ -227,7 +255,7 @@ const CHAIN_ID_LOGO_MAP: Record<number, string> = {
   42161: 'arbitrum',
   10: 'optimism',
   8453: 'base',
-  43114: 'avax',
+  43114: 'avalanche',
   250: 'fantom',
   100: 'gnosis',
   324: 'zksync era',
@@ -254,6 +282,13 @@ const CHAIN_ID_LOGO_MAP: Record<number, string> = {
   1666600000: 'harmony',
   1329: 'sei',
   369: 'pulse',
+  900001: 'solana',
+  900002: 'solana',
+  900003: 'aptos',
+  900004: 'aptos',
+  900005: 'cardano',
+  900006: 'cardano',
+  900007: 'bitcoin',
   // Testnets
   11155111: 'ethereum',
   17000: 'ethereum',
@@ -262,7 +297,7 @@ const CHAIN_ID_LOGO_MAP: Record<number, string> = {
   421614: 'arbitrum',
   11155420: 'optimism',
   84532: 'base',
-  43113: 'avax',
+  43113: 'avalanche',
   4002: 'fantom',
   10200: 'gnosis',
   300: 'zksync era',
@@ -279,4 +314,48 @@ export function getChainLogoById(chainId: number): string {
   const slug = CHAIN_ID_LOGO_MAP[chainId];
   if (!slug) return '';
   return `${LLAMAO_BASE}${encodeURIComponent(slug)}.jpg`;
+}
+
+/**
+ * Normalizes a blockchain name (e.g., from Rubic API) to match CHAIN_LOGO_MAP keys.
+ * Handles case-insensitivity and underscore-to-space normalization.
+ */
+export function getChainLogoByBlockchainName(blockchainName: string): string {
+  if (!blockchainName) return '';
+  
+  // 1. Direct match
+  if (CHAIN_LOGO_MAP[blockchainName]) return getChainLogo(blockchainName);
+  
+  // 2. Normalized match (uppercase comparison for Rubic-style names like 'ETH')
+  const upperName = blockchainName.toUpperCase();
+  const rubicMapping: Record<string, string> = {
+    'ETH': 'Ethereum',
+    'BSC': 'BNB Chain',
+    'POLYGON': 'Polygon',
+    'ARBITRUM': 'Arbitrum',
+    'OPTIMISM': 'Optimism',
+    'AVALANCHE': 'Avalanche',
+    'BASE': 'Base',
+    'FANTOM': 'Fantom',
+    'GNOSIS': 'Gnosis',
+    'ZK_SYNC': 'zkSync Era',
+    'POLYGON_ZKEVM': 'Polygon zkEVM',
+    'MANTA_PACIFIC': 'Manta Pacific',
+  };
+  
+  if (rubicMapping[upperName]) return getChainLogo(rubicMapping[upperName]);
+  
+  // 3. Fallback: Lowercase and replace underscores with spaces
+  const normalized = blockchainName.toLowerCase().replace(/_/g, ' ');
+  // Find case-insensitive match in keys
+  const exactKey = Object.keys(CHAIN_LOGO_MAP).find(k => k.toLowerCase() === normalized);
+  if (exactKey) return getChainLogo(exactKey);
+  
+  // 4. Try matching the slug directly if the name is a slug
+  const values = Object.values(CHAIN_LOGO_MAP);
+  if (values.includes(normalized)) {
+    return `${LLAMAO_BASE}${encodeURIComponent(normalized)}.jpg`;
+  }
+
+  return '';
 }

@@ -283,14 +283,3 @@ const io = new Server(server, {
 
 const { monitorPrice } = require('./services/notificationService');
 initSocket(io);
-
-// Example price monitoring for the user's request (ETH in INR)
-// Threshold: 3,00,000 INR
-monitorPrice('ethereum', 300000, 'inr');
-
-// --- Discord Test Trigger ---
-const { sendDiscordNotification } = require('./services/discordService');
-setTimeout(() => {
-  sendDiscordNotification("🚀 Test Discord Notification Working");
-}, 5000);
-// ----------------------------

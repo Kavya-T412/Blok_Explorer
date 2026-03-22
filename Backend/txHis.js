@@ -3,6 +3,123 @@ const { ethers } = require('ethers');
 const { NETWORK_CONFIGS } = require('./networkconfig');
 
 /**
+ * Solana Address Validator
+ */
+function isSolanaAddress(address) {
+    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
+}
+
+/**
+ * Aptos Address Validator
+ */
+function isAptosAddress(address) {
+    return /^0x[a-fA-F0-9]{64}$/.test(address);
+}
+
+/**
+ * Bitcoin Address Validator
+ */
+function isBitcoinAddress(address) {
+    return /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(address) || /^(bc1)[a-z0-9]{25,39}$/.test(address);
+}
+
+/**
+ * Fetch Bitcoin transactions via REST
+ */
+async function fetchBitcoinTransactions(address) {
+    try {
+        const response = await fetch(`https://blockchain.info/rawaddr/${address}?limit=20`);
+        const data = await response.json();
+        if (data.txs) {
+            return data.txs.map(tx => ({
+                hash: tx.hash,
+                blockNum: tx.block_height?.toString() || '0',
+                metadata: {
+                    blockTimestamp: tx.time ? new Date(tx.time * 1000).toISOString() : null
+                },
+                from: tx.inputs?.[0]?.prev_out?.addr || '',
+                to: address,
+                value: (tx.result || 0).toString(),
+                asset: 'BTC',
+                direction: tx.result < 0 ? 'sent' : 'received',
+                network: 'Bitcoin',
+                txStatus: 'success'
+            }));
+        }
+    } catch (e) {
+        console.error('Bitcoin tx fetch error:', e);
+    }
+    return [];
+}
+
+/**
+ * Fetch Solana transactions via RPC
+ */
+async function fetchSolanaTransactions(address) {
+    try {
+        const response = await fetch('https://api.mainnet-beta.solana.com', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: "2.0",
+                id: 1,
+                method: "getSignaturesForAddress",
+                params: [address, { limit: 20 }]
+            })
+        });
+        const data = await response.json();
+        if (data.result) {
+            return data.result.map(sig => ({
+                hash: sig.signature,
+                blockNum: sig.slot.toString(),
+                metadata: {
+                    blockTimestamp: sig.blockTime ? new Date(sig.blockTime * 1000).toISOString() : null
+                },
+                from: '', 
+                to: address,
+                value: '0',
+                asset: 'SOL',
+                direction: 'received', // Simpler for now
+                network: 'Solana',
+                txStatus: sig.err ? 'failed' : 'success'
+            }));
+        }
+    } catch (e) {
+        console.error('Solana tx fetch error:', e);
+    }
+    return [];
+}
+
+/**
+ * Fetch Aptos transactions via REST
+ */
+async function fetchAptosTransactions(address) {
+    try {
+        const response = await fetch(`https://api.mainnet-beta.aptoslabs.com/v1/accounts/${address}/transactions?limit=20`);
+        const data = await response.json();
+        if (Array.isArray(data)) {
+            return data.map(tx => ({
+                hash: tx.hash,
+                blockNum: tx.version,
+                metadata: {
+                    blockTimestamp: tx.timestamp ? new Date(parseInt(tx.timestamp) / 1000).toISOString() : null
+                },
+                from: tx.sender || '',
+                to: address,
+                value: '0',
+                asset: 'APT',
+                direction: tx.sender === address ? 'sent' : 'received',
+                network: 'Aptos',
+                txStatus: tx.success ? 'success' : 'failed'
+            }));
+        }
+    } catch (e) {
+        console.error('Aptos tx fetch error:', e);
+    }
+    return [];
+}
+
+/**
  * Fetch the block timestamp using standard JSON-RPC.
  */
 async function fetchBlockTimestamp(blockNum, rpcUrl) {
@@ -148,8 +265,30 @@ async function fetchNetworkTransactions(walletAddress, network, rpcUrl, categori
  * Get aggregated transaction history across all supported networks.
  */
 async function getTransactionHistory(walletAddress, networkMode = 'mainnet') {
-    if (!walletAddress?.match(/^0x[a-fA-F0-9]{40}$/)) {
-        throw new Error('Invalid wallet address format');
+    if (!walletAddress) {
+        throw new Error('Wallet address is required');
+    }
+
+    // Handle Solana
+    if (isSolanaAddress(walletAddress)) {
+        return await fetchSolanaTransactions(walletAddress);
+    }
+
+    // Handle Aptos
+    if (isAptosAddress(walletAddress)) {
+        return await fetchAptosTransactions(walletAddress);
+    }
+
+    // Handle Bitcoin
+    if (isBitcoinAddress(walletAddress)) {
+        return await fetchBitcoinTransactions(walletAddress);
+    }
+
+    // Default to EVM check
+    if (!walletAddress.match(/^0x[a-fA-F0-9]{40}$/)) {
+        // If it's not a standard EVM address but was requested for non-EVM, we might have already returned.
+        // If it reaches here, it's an unrecognized format.
+        return []; 
     }
     if (!['mainnet', 'testnet'].includes(networkMode)) {
         throw new Error('Invalid network mode');

@@ -210,6 +210,14 @@ const Dashboard = () => {
       'Boba Network': { gradient: 'from-green-400 to-lime-500', badge: 'bg-gradient-to-r from-green-400/30 to-lime-500/30 border-green-400/50 text-green-600 dark:text-green-200', icon: '🟡' },
       // Harmony
       'Harmony': { gradient: 'from-blue-300 to-cyan-400', badge: 'bg-gradient-to-r from-blue-300/30 to-cyan-400/30 border-blue-300/50 text-cyan-600 dark:text-cyan-200', icon: '🔵' },
+      // Non-EVM networks
+      'Solana': { gradient: 'from-purple-500 to-green-400', badge: 'bg-gradient-to-r from-purple-500/30 to-green-400/30 border-green-500/50 text-green-600 dark:text-green-200', icon: '☀️' },
+      'Solana Devnet': { gradient: 'from-purple-400 to-green-300', badge: 'bg-gradient-to-r from-purple-400/30 to-green-300/30 border-green-400/50 text-green-600 dark:text-green-200', icon: '☀️' },
+      'Aptos': { gradient: 'from-zinc-700 to-zinc-900', badge: 'bg-gradient-to-r from-zinc-700/30 to-zinc-900/30 border-zinc-700/50 text-zinc-600 dark:text-zinc-200', icon: '💧' },
+      'Aptos Testnet': { gradient: 'from-zinc-600 to-zinc-800', badge: 'bg-gradient-to-r from-zinc-600/30 to-zinc-800/30 border-zinc-600/50 text-zinc-600 dark:text-zinc-200', icon: '💧' },
+      'Cardano': { gradient: 'from-blue-700 to-blue-900', badge: 'bg-gradient-to-r from-blue-700/30 to-blue-900/30 border-blue-700/50 text-blue-600 dark:text-blue-200', icon: '₳' },
+      'Cardano Preprod': { gradient: 'from-blue-600 to-blue-800', badge: 'bg-gradient-to-r from-blue-600/30 to-blue-800/30 border-blue-600/50 text-blue-600 dark:text-blue-200', icon: '₳' },
+      'Bitcoin': { gradient: 'from-orange-500 to-yellow-600', badge: 'bg-gradient-to-r from-orange-500/30 to-yellow-600/30 border-orange-500/50 text-orange-600 dark:text-orange-200', icon: '₿' },
     };
 
     return chainStyles[chainName] || {

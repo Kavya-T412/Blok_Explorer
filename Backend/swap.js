@@ -1,5 +1,11 @@
 const fetch = require('node-fetch');
-const { NETWORK_CONFIGS, TESTNET_TOKENS, UNISWAP_V3_ROUTERS, WRAPPED_NATIVE } = require('./networkconfig');
+const { ethers } = require('ethers');
+const { NETWORK_CONFIGS, TESTNET_TOKENS, UNISWAP_V3_ROUTERS, UNISWAP_V3_QUOTERS, WRAPPED_NATIVE } = require('./networkconfig');
+
+const UNISWAP_V3_QUOTER_ABI = [
+  'function quoteExactInputSingle(address tokenIn, address tokenOut, uint24 fee, uint256 amountIn, uint160 sqrtPriceLimitX96) external returns (uint256 amountOut)',
+  'function quoteExactInputSingle((address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96)) external returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)'
+];
 
 const RUBIC_API_BASE = 'https://api-v2.rubic.exchange/api';
 const REFERRER = 'rubic.exchange';
@@ -285,66 +291,87 @@ class RubicSwapService {
 
     if (srcIsTestnet || dstIsTestnet) {
       const isCrossChain = srcTokenBlockchain.toUpperCase() !== dstTokenBlockchain.toUpperCase();
+      if (isCrossChain) throw new Error('Testnet bridging is not supported.');
+
+      // 1. Determine Chain and Provider
+      const chainId = Object.keys(NETWORK_CONFIGS).find(k => NETWORK_CONFIGS[k].name.toUpperCase().replace(/ /g, '_') === srcTokenBlockchain.toUpperCase());
+      const config = NETWORK_CONFIGS[chainId];
+      if (!config) throw new Error(`Network config not found for ${srcTokenBlockchain}`);
+
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const quoterAddress = UNISWAP_V3_QUOTERS[chainId];
+      const routerAddress = UNISWAP_V3_ROUTERS[chainId];
+
+      if (!quoterAddress || !routerAddress) {
+         throw new Error(`Uniswap V3 not supported on ${config.name}`);
+      }
+
+      const quoter = new ethers.Contract(quoterAddress, UNISWAP_V3_QUOTER_ABI, provider);
+
+      // 2. Resolve Token Addresses (handle Native vs WNative)
+      const nativeZero = '0x0000000000000000000000000000000000000000';
+      const nativeE = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
       
-      if (isCrossChain) {
-        throw new Error('Testnet bridging is not supported.');
-      }
-
-      let srcSymbol = 'ETH';
-      let dstSymbol = 'ETH';
-      const srcList = TESTNET_TOKENS[srcTokenBlockchain.toUpperCase()];
-      if (srcList) {
-         const t = srcList.find(x => x.address.toLowerCase() === srcTokenAddress.toLowerCase() || (x.address === '0x0000000000000000000000000000000000000000' && srcTokenAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'));
-         if (t) srcSymbol = t.symbol;
-      }
-      const dstList = TESTNET_TOKENS[dstTokenBlockchain.toUpperCase()];
-      if (dstList) {
-         const t = dstList.find(x => x.address.toLowerCase() === dstTokenAddress.toLowerCase() || (x.address === '0x0000000000000000000000000000000000000000' && dstTokenAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'));
-         if (t) dstSymbol = t.symbol;
-      }
-
-      const isWrapOrUnwrap = 
-         (srcSymbol === 'ETH' && dstSymbol === 'WETH') ||
-         (srcSymbol === 'WETH' && dstSymbol === 'ETH') ||
-         (srcSymbol === 'MATIC' && dstSymbol === 'WMATIC') ||
-         (srcSymbol === 'WMATIC' && dstSymbol === 'MATIC') ||
-         (srcSymbol === 'TBNB' && dstSymbol === 'WBNB') ||
-         (srcSymbol === 'WBNB' && dstSymbol === 'TBNB') ||
-         (srcSymbol === 'AVAX' && dstSymbol === 'WAVAX') ||
-         (srcSymbol === 'WAVAX' && dstSymbol === 'AVAX') ||
-         (srcSymbol === dstSymbol);
-
-      let exchangeRate = 1;
-      let srcUsdPrice = 1;
-
-      if (!isWrapOrUnwrap) {
-         const srcPrice = await getTokenPriceUsd(srcSymbol);
-         const dstPrice = await getTokenPriceUsd(dstSymbol);
-         srcUsdPrice = srcPrice;
-         if (dstPrice > 0) {
-            exchangeRate = srcPrice / dstPrice;
-         }
-      }
-
-      const exactOutput = srcTokenAmount * exchangeRate;
-      const simulatedOutput = exactOutput * 0.99;
-      const minOutput = exactOutput * 0.98;
-      
-      const mockRoute = {
-        id: 'testnet_mock_route_' + Date.now(),
-        provider: 'Xswapink',
-        type: 'on-chain',
-        toAmount: String(simulatedOutput),
-        toAmountMin: String(minOutput),
-        durationInMinutes: 0.5,
-        fees: {
-          percentFees: { percent: 1.0 }
-        },
-        tokens: {
-          from: { amount: srcTokenAmount, price: srcUsdPrice }
+      const resolveAddr = (addr) => {
+        if (addr.toLowerCase() === nativeZero || addr.toLowerCase() === nativeE) {
+          return WRAPPED_NATIVE[chainId];
         }
+        return addr;
       };
-      return [normalizeRoute(mockRoute, srcTokenAmount)];
+
+      const tokenIn = resolveAddr(srcTokenAddress);
+      const tokenOut = resolveAddr(dstTokenAddress);
+
+      // 3. Perform Real Quoting (Check multiple fee tiers)
+      const fees = [3000, 500, 10000, 100]; // 0.3%, 0.05%, 1%, 0.01%
+      let bestAmountOut = 0n;
+      let bestFee = 3000;
+
+      const srcTokenDecimals = 18; // Default, ideally fetch from TESTNET_TOKENS or dynamic
+      const amountIn = ethers.parseUnits(String(srcTokenAmount), srcTokenDecimals);
+
+      console.log(`[UniswapQuote] Fetching quote for ${srcTokenAmount} tokens from ${tokenIn} to ${tokenOut} on ${config.name}`);
+
+      for (const fee of fees) {
+        try {
+          // Try QuoterV2 first (struct params)
+          const quote = await quoter.quoteExactInputSingle.staticCall({
+            tokenIn, tokenOut, amountIn, fee, sqrtPriceLimitX96: 0
+          }).catch(() => 
+            // Fallback to original Quoter (positional params)
+            quoter.quoteExactInputSingle.staticCall(tokenIn, tokenOut, fee, amountIn, 0)
+          );
+
+          const amountOut = Array.isArray(quote) ? quote[0] : quote;
+          if (amountOut > bestAmountOut) {
+            bestAmountOut = amountOut;
+            bestFee = fee;
+          }
+        } catch (e) {
+          // Fee tier might not exist
+        }
+      }
+
+      if (bestAmountOut === 0n) {
+        throw new Error('No liquidity found for this pair on Uniswap V3 testnet.');
+      }
+
+      const srcUsdPrice = await getTokenPriceUsd(srcTokenBlockchain); // Using blockchain name as proxy for native/wrapped price
+      const toAmount = ethers.formatUnits(bestAmountOut, 18); // Simplified decimals
+      
+      const realRoute = {
+        id: `uniswap_v3_${chainId}_${bestFee}_${Date.now()}`,
+        provider: 'Xswapink', // Brand as Xswapink but it's Uniswap
+        type: 'on-chain',
+        toAmount: toAmount,
+        toAmountMin: String(parseFloat(toAmount) * 0.98),
+        durationInMinutes: 1,
+        fees: { percentFees: { percent: bestFee / 10000 } },
+        tokens: { from: { amount: srcTokenAmount, price: srcUsdPrice } },
+        uniswapData: { fee: bestFee, router: routerAddress }
+      };
+
+      return [normalizeRoute(realRoute, srcTokenAmount)];
     }
 
     const result = await rubicPost('/routes/quoteAll', {
@@ -401,29 +428,22 @@ class RubicSwapService {
     } = params;
     if (!id || !fromAddress) throw new Error('Route id and fromAddress are required');
 
-    if (id.startsWith('testnet_mock_route')) {
+    if (id.startsWith('uniswap_v3')) {
       const srcBlockchainUpper = srcTokenBlockchain.toUpperCase();
       const srcConfigKey = Object.keys(NETWORK_CONFIGS).find(k => NETWORK_CONFIGS[k].name.toUpperCase().replace(/ /g, '_') === srcBlockchainUpper);
       const uniswapRouter = srcConfigKey ? UNISWAP_V3_ROUTERS[srcConfigKey] : '0x0000000000000000000000000000000000000000';
       const isNative = srcTokenAddress.toLowerCase() === '0x0000000000000000000000000000000000000000' || srcTokenAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 
-      const { ethers } = require('ethers');
-
-      // Find decimals to convert human-readable amount to Wei
+      // Find decimals
       let decimals = 18;
       if (TESTNET_TOKENS[srcBlockchainUpper]) {
         const tokenInfo = TESTNET_TOKENS[srcBlockchainUpper].find(t => t.address.toLowerCase() === srcTokenAddress.toLowerCase());
         if (tokenInfo) decimals = tokenInfo.decimals;
       }
 
-      let amountInWei = '0';
-      try {
-        amountInWei = ethers.parseUnits(String(srcTokenAmount), decimals).toString();
-      } catch (e) {
-        amountInWei = '1000000000000000000'; // fallback
-      }
+      const amountInWei = ethers.parseUnits(String(srcTokenAmount), decimals).toString();
 
-      // Generate valid Uniswap V3 exactInputSingle calldata
+      // Uniswap V3 exactInputSingle
       const dstBlockchainUpper = dstTokenBlockchain.toUpperCase();
       const dstConfigKey = Object.keys(NETWORK_CONFIGS).find(k => NETWORK_CONFIGS[k].name.toUpperCase().replace(/ /g, '_') === dstBlockchainUpper);
       const isDstNative = dstTokenAddress.toLowerCase() === '0x0000000000000000000000000000000000000000' || dstTokenAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
@@ -436,44 +456,33 @@ class RubicSwapService {
       let txApproval = uniswapRouter;
 
       if (tokenIn.toLowerCase() === tokenOut.toLowerCase()) {
-        // Universal Native Wrap or Unwrap logic (ETH->WETH, MATIC->WMATIC, AVAX->WAVAX, etc.)
         const WRAPPED_NATIVE_ABI = [
           'function deposit() payable',
           'function withdraw(uint256 wad)'
         ];
         const wrappedNativeIface = new ethers.Interface(WRAPPED_NATIVE_ABI);
-        txTo = tokenIn; // Wrapped Native Contract
-        txApproval = tokenIn; // Wrapped Native Contract
+        txTo = tokenIn;
+        txApproval = tokenIn;
 
-        try {
-          if (isNative) {
-            // Native -> Wrapped Native (Wrap)
-            validData = wrappedNativeIface.encodeFunctionData('deposit');
-          } else if (isDstNative) {
-            // Wrapped Native -> Native (Unwrap)
-            validData = wrappedNativeIface.encodeFunctionData('withdraw', [amountInWei]);
-          }
-        } catch (e) {
-          console.error('Error generating Wrapped Native calldata:', e);
+        if (isNative) {
+          validData = wrappedNativeIface.encodeFunctionData('deposit');
+        } else if (isDstNative) {
+          validData = wrappedNativeIface.encodeFunctionData('withdraw', [amountInWei]);
         }
       } else {
-        // Standard Swap logic
         const IRouterABI = ['function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) payable returns (uint256 amountOut)'];
         const iface = new ethers.Interface(IRouterABI);
 
-        try {
-          validData = iface.encodeFunctionData('exactInputSingle', [{
-            tokenIn: tokenIn,
-            tokenOut: tokenOut,
-            fee: 3000,
-            recipient: receiverAddress || fromAddress,
-            amountIn: amountInWei,
-            amountOutMinimum: 0,
-            sqrtPriceLimitX96: 0
-          }]);
-        } catch (e) {
-          console.error('Error generating Uniswap calldata:', e);
-        }
+        const fee = parseInt(id.split('_')[3]) || 3000;
+        validData = iface.encodeFunctionData('exactInputSingle', [{
+          tokenIn: tokenIn,
+          tokenOut: tokenOut,
+          fee: fee,
+          recipient: receiverAddress || fromAddress,
+          amountIn: amountInWei,
+          amountOutMinimum: 0,
+          sqrtPriceLimitX96: 0
+        }]);
       }
 
       const isWrapOrUnwrap = tokenIn.toLowerCase() === tokenOut.toLowerCase();

@@ -5,6 +5,7 @@ import {
   RefreshCw, Search, ChevronDown, Zap, Clock, TrendingUp,
   Settings, History, Info, ChevronRight
 } from 'lucide-react';
+import { getChainLogo, getChainLogoByBlockchainName } from '@/lib/chainLogos';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
@@ -180,50 +181,10 @@ const CHAIN_DISPLAY_NAMES: Record<string, string> = {
   CASPER: 'Casper', KAVA_COSMOS: 'Kava', SIA: 'Siacoin',
 };
 
-// Maps Rubic blockchainName → DeFiLlama icon slug (only where the name differs
-// from the simple lowercase+underscore-to-space rule)
-const CHAIN_SLUG_OVERRIDES: Record<string, string> = {
-  ETH: 'ethereum', BSC: 'bsc', OKX: 'okexchain',
-  ZK_SYNC: 'zksync era', ZK_FAIR: 'zkfair', ZK_LINK: 'zklink nova',
-  ROOTSTOCK: 'rsk', RIPPLE: 'xrp', ICP: 'internet computer',
-  ASTAR_EVM: 'astar', KAVA_COSMOS: 'kava', BOBA_BSC: 'boba bsc',
-  GRAVITY: 'gravity alpha', HYPER_EVM: 'hyperliquid',
-  BITCOIN: 'bitcoin', HEDERA: 'hedera', KLAYTN: 'kaia',
-  HARMONY: 'harmony', DOGECOIN: 'dogechain', SIA: 'siacoin',
-  HORIZEN_EON: 'horizen eon', BERACHAIN: 'berachain bex',
-  MANTA_PACIFIC: 'manta pacific',
-  SEPOLIA: 'ethereum', HOODI: 'ethereum',
-  POLYGON_AMOY: 'polygon',
-  BSC_TESTNET: 'bsc',
-  ARBITRUM_SEPOLIA: 'arbitrum',
-  OPTIMISM_SEPOLIA: 'optimism',
-  BASE_SEPOLIA: 'base',
-  AVALANCHE_FUJI: 'avalanche',
-  FANTOM_TESTNET: 'fantom',
-  GNOSIS_CHIADO: 'gnosis',
-  ZKSYNC_SEPOLIA: 'zksync era',
-  LINEA_SEPOLIA: 'linea',
-  SCROLL_SEPOLIA: 'scroll',
-  MANTLE_SEPOLIA: 'mantle',
-  BLAST_SEPOLIA: 'blast',
-  CELO_ALFAJORES: 'celo',
-  MODE_SEPOLIA: 'mode',
-  MANTA_SEPOLIA: 'manta pacific',
-  SOLANA_DEVNET: 'solana',
-  SOLANA_TESTNET: 'solana',
-  APTOS_TESTNET: 'aptos',
-};
-
-// Build a DeFiLlama icon URL from a slug
-const dlIcon = (slug: string) =>
-  `https://icons.llamao.fi/icons/chains/rsz_${encodeURIComponent(slug)}.jpg`;
-
 // Always returns a URL string. onError on the <img> tag handles 404s gracefully.
 const getChainIcon = (blockchainName: string, apiImage?: string | null): string => {
   if (apiImage) return apiImage;
-  const key = blockchainName.toUpperCase();
-  const slug = CHAIN_SLUG_OVERRIDES[key] ?? key.toLowerCase().replace(/_/g, ' ');
-  return dlIcon(slug);
+  return getChainLogoByBlockchainName(blockchainName);
 };
 
 const getTokenIcon = (token: RubicToken | null, chain: RubicChain | null): string | undefined => {
