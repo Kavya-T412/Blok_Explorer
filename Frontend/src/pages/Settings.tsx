@@ -5,7 +5,7 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { NetworkModeToggle } from '@/components/NetworkModeToggle';
 import { NetworkManager } from '@/components/NetworkManager';
 
@@ -13,11 +13,8 @@ const Settings = () => {
   const [darkMode, setDarkMode] = useState(true);
   const [language, setLanguage] = useState('english');
   const [notifications, setNotifications] = useState(true);
-  const { toast } = useToast();
-
   const handleSave = () => {
-    toast({
-      title: 'Settings Saved',
+    toast.success('Settings Saved', {
       description: 'Your preferences have been updated successfully',
     });
   };

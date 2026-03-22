@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/contexts/WalletContext';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import Navbar from '@/components/Navbar';
 
 
@@ -12,27 +12,22 @@ import { useEffect } from 'react';
 const Connect = () => {
   const navigate = useNavigate();
   const { connectWallet, isConnected } = useWallet();
-  const { toast } = useToast();
-
   // Only redirect after a real wallet connection
   useEffect(() => {
     if (isConnected) {
-      toast({
-        title: 'Wallet Connected',
+      toast.success('Wallet Connected', {
         description: 'Successfully connected!',
       });
       navigate('/dashboard');
     }
-  }, [isConnected, navigate, toast]);
+  }, [isConnected, navigate]);
 
   const handleConnect = async (provider?: 'metamask' | 'trustwallet') => {
     try {
       await connectWallet(provider as any);
     } catch (error) {
-      toast({
-        title: 'Connection Failed',
+      toast.error('Connection Failed', {
         description: 'Could not connect to wallet. Please try again.',
-        variant: 'destructive',
       });
     }
   };

@@ -45,6 +45,13 @@ function initSocket(io) {
             const personalWebhook = socketWebhookMap.get(socket.id);
             if (personalWebhook) {
                 sendDiscordMessage(data, personalWebhook);
+                
+                // Also ensures it's in the walletAddress -> webhook map for future backend alerts (like confirmation tracking)
+                if (data.walletAddress) {
+                    try {
+                        require('./userWebhookService').saveUserWebhook(data.walletAddress, personalWebhook);
+                    } catch (e) {}
+                }
             }
 
             // Broadcast to all other clients

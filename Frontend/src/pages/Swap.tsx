@@ -10,7 +10,6 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useToast } from '@/hooks/use-toast';
 import { useWallet } from '@/contexts/WalletContext';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -472,7 +471,6 @@ function RouteCard({ route, dstSymbol, selected, onSelect, isBest }: { route: Ru
 
 // ── Main Layout ───────────────────────────────────────────────────────────────
 export default function Swap() {
-  const { toast } = useToast();
   const { address: walletAddress } = useWallet();
 
   const [chains, setChains] = useState<RubicChain[]>([]);
@@ -597,7 +595,12 @@ export default function Swap() {
 
     const isTestnetMode = localStorage.getItem('useTestnet') === 'true';
     if (isTestnetMode && srcChain?.id !== dstChain?.id) {
-      toast({ title: 'Bridging Not Supported', description: 'Cross-chain bridging is not supported on testnets. Please select the same network for both source and destination.', variant: 'destructive' });
+      notificationService.sendNotification({
+        type: 'error',
+        title: 'Bridging Not Supported',
+        message: 'Cross-chain bridging is not supported on testnets. Please select the same network for both source and destination.',
+        walletAddress
+      });
       setRoutes([]);
       setShowRoutes(false);
       return;
@@ -617,7 +620,12 @@ export default function Swap() {
       setSelectedRoute(res[0]);
       setShowRoutes(true);
     } catch (err: any) {
-      toast({ title: 'Quote Error', description: `We couldn't fetch swap routes: ${err.message}`, variant: 'destructive' });
+      notificationService.sendNotification({
+        type: 'error',
+        title: 'Quote Error',
+        message: `We couldn't fetch swap routes: ${err.message}`,
+        walletAddress
+      });
     } finally {
       setLoading(false);
     }
@@ -625,12 +633,22 @@ export default function Swap() {
 
   const executeSwap = async () => {
     if (!selectedRoute || !srcChain || !dstChain || !srcToken || !dstToken || !walletAddress) {
-      toast({ title: 'Connect wallet and select a route first', variant: 'destructive' });
+      notificationService.sendNotification({
+        type: 'error',
+        title: 'Selection Required',
+        message: 'Connect wallet and select a route first',
+        walletAddress
+      });
       return;
     }
     const win = window as Window & typeof globalThis & { ethereum?: unknown };
     if (!win.ethereum) {
-      toast({ title: 'No wallet found', description: 'Please install MetaMask or a compatible wallet.', variant: 'destructive' });
+      notificationService.sendNotification({
+        type: 'error',
+        title: 'No Wallet Found',
+        message: 'Please install MetaMask or a compatible wallet.',
+        walletAddress
+      });
       return;
     }
     setLoading(true);
@@ -639,7 +657,12 @@ export default function Swap() {
 
       const network = await provider.getNetwork();
       if (network.chainId !== BigInt(srcChain.id!)) {
-        toast({ title: 'Switching Network', description: `Please confirm the switch to ${formatChainName(srcChain)} in your wallet.` });
+        notificationService.sendNotification({
+          type: 'info',
+          title: 'Switching Network',
+          message: `Please confirm the switch to ${formatChainName(srcChain)} in your wallet.`,
+          walletAddress
+        });
         try {
           await win.ethereum.request({
             method: 'wallet_switchEthereumChain',
@@ -650,7 +673,12 @@ export default function Swap() {
           provider = new ethers.BrowserProvider(win.ethereum as ethers.Eip1193Provider);
         } catch (switchError: any) {
           if (switchError.code === 4902) {
-            toast({ title: 'Network Not Added', description: `Please add ${formatChainName(srcChain)} to your wallet before swapping.`, variant: 'destructive' });
+            notificationService.sendNotification({
+              type: 'error',
+              title: 'Network Not Added',
+              message: `Please add ${formatChainName(srcChain)} to your wallet before swapping.`,
+              walletAddress
+            });
             setLoading(false);
             return;
           }
@@ -660,7 +688,12 @@ export default function Swap() {
 
       const signer = await provider.getSigner();
 
-      toast({ title: 'Refreshing quote...', description: 'Getting latest price' });
+      notificationService.sendNotification({
+        type: 'info',
+        title: 'Refreshing quote...',
+        message: 'Getting latest price',
+        walletAddress
+      });
       let freshRouteId = selectedRoute.id;
       try {
         const freshRoutes = await rubicSwapService.getQuoteAll({
@@ -703,16 +736,31 @@ export default function Swap() {
         const allowance: bigint = await tokenContract.allowance(walletAddress, spenderAddress) as bigint;
 
         if (allowance < srcAmtBig) {
-          toast({ title: 'Approving token...', description: 'Please confirm in wallet' });
+          notificationService.sendNotification({
+            type: 'info',
+            title: 'Approving token...',
+            message: 'Please confirm in wallet',
+            walletAddress
+          });
 
           const approveTx = await tokenContract.approve(spenderAddress, srcAmtBig);
           const approveReceipt = await (approveTx as { wait: () => Promise<any> }).wait();
 
-          toast({ title: 'Token approved!', description: 'Ready to swap.' });
+          notificationService.sendNotification({
+            type: 'success',
+            title: 'Token approved!',
+            message: 'Ready to swap.',
+            walletAddress
+          });
         }
       }
 
-      toast({ title: 'Confirm swap in your wallet' });
+      notificationService.sendNotification({
+        type: 'info',
+        title: 'Confirm swap',
+        message: 'Please confirm the transaction in your wallet',
+        walletAddress
+      });
 
       let txTo = tx.to;
       let txData = tx.data;
@@ -778,50 +826,25 @@ export default function Swap() {
       const txLink = explorerUrl ? `${explorerUrl}/tx/${txResponse.hash}` : null;
       setLastTxLink(txLink);
 
-      toast({
-        title: 'Swap submitted!',
-        description: (
-          <div className="flex flex-col gap-1 mt-1">
-            <span>Tx: {txResponse.hash.slice(0, 10)}...</span>
-            {txLink && (
-              <a href={txLink} target="_blank" rel="noreferrer" className="text-squid-primary hover:underline flex items-center gap-1 text-xs font-medium">
-                View on Explorer <ExternalLink className="w-3 h-3" />
-              </a>
-            )}
-          </div>
-        )
-      });
-
-      // Send real notification for submission
+      // Unified notification for submission
       notificationService.sendNotification({
         type: "PENDING",
-        message: `Swap of ${srcAmount} ${srcToken.symbol} submitted`,
-        txHash: txResponse.hash
+        title: 'Swap submitted!',
+        message: `Swap of ${srcAmount} ${srcToken.symbol} submitted${txLink ? '. View on Explorer.' : ''}`,
+        txHash: txResponse.hash,
+        walletAddress
       });
 
       const receipt = await txResponse.wait(1);
 
       if (receipt.status === 1) {
-        toast({
-          title: 'Transfer Confirmed!',
-          description: (
-            <div className="flex flex-col gap-1 mt-1">
-              <span>Transaction mined within 1 block.</span>
-              {txLink && (
-                <a href={txLink} target="_blank" rel="noreferrer" className="text-squid-primary hover:underline flex items-center gap-1 text-xs font-medium">
-                  View on Explorer <ExternalLink className="w-3 h-3" />
-                </a>
-              )}
-            </div>
-          )
-        });
-
-        // The backend will continue tracking up to 12 blocks and notify via Socket.io
         notificationService.sendNotification({
           type: "CONFIRMATION",
-          message: `Swap submitted. Waiting for multi-block confirmation...`,
+          title: 'Transfer Confirmed!',
+          message: `Swap submitted. Transaction mined within 1 block.${txLink ? ' View on Explorer.' : ''}`,
           txHash: txResponse.hash,
-          blocks: 1
+          blocks: 1,
+          walletAddress
         });
       } else {
         throw new Error('Transaction reverted on-chain.');
@@ -849,17 +872,12 @@ export default function Swap() {
         errorMessage = "Transaction failed: Contract execution reverted.";
       }
 
-      toast({
-        title: 'Swap Interrupted',
-        description: errorMessage,
-        variant: 'destructive'
-      });
-
-      // Send real notification for failure with detailed reason
       notificationService.sendNotification({
         type: "FAILED",
+        title: 'Swap Interrupted',
         message: errorMessage,
-        txHash: ""
+        txHash: "",
+        walletAddress
       });
     } finally {
       setLoading(false);

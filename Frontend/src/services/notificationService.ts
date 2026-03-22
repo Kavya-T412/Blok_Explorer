@@ -174,10 +174,8 @@ class NotificationService {
         this.persist();
         this.notifyListeners();
 
-        // Show toast if it's from server or a critical local event
-        if (fromServer || data.type === 'FAILED' || data.type === 'CONFIRMATION') {
-            this.showToast(newNotification);
-        }
+        // Show toast by default for all local notifications
+        this.showToast(newNotification);
     }
 
     private getTitleForType(type: string): string {
