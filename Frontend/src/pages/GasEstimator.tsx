@@ -241,7 +241,7 @@ const GasEstimator = () => {
               <div>
                 <h1 className="text-4xl font-bold gradient-text mb-2">Gas Fee Estimator</h1>
                 <p className="text-muted-foreground">
-                  Real-time gas prices across {isTestnetMode ? 'Testnet' : 'Mainnet'} chains via Alchemy
+                  Real-time gas prices across {isTestnetMode ? 'Testnet' : 'Mainnet'} chains 
                 </p>
               </div>
               <button
