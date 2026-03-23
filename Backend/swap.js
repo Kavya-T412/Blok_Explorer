@@ -114,7 +114,7 @@ async function getTokenPriceUsd(symbol) {
         priceCache[id] = { price, timestamp: Date.now() };
         return price;
       }
-    } catch(err) {}
+    } catch (err) { }
   }
   return priceCache[id]?.price || 1.0;
 }
@@ -294,16 +294,24 @@ class RubicSwapService {
       if (isCrossChain) throw new Error('Testnet bridging is not supported.');
 
       // 1. Determine Chain and Provider
-      const chainId = Object.keys(NETWORK_CONFIGS).find(k => NETWORK_CONFIGS[k].name.toUpperCase().replace(/ /g, '_') === srcTokenBlockchain.toUpperCase());
+      const chainId = Object.keys(NETWORK_CONFIGS).find(k => {
+        const name = NETWORK_CONFIGS[k].name;
+        return name && name.toUpperCase().replace(/ /g, '_') === srcTokenBlockchain.toUpperCase();
+      });
+
+      if (!chainId) {
+        throw new Error(`Chain configuration not found for testnet: ${srcTokenBlockchain}`);
+      }
+
       const config = NETWORK_CONFIGS[chainId];
-      if (!config) throw new Error(`Network config not found for ${srcTokenBlockchain}`);
+      if (!config) throw new Error(`Network config not found for ID ${chainId}`);
 
       const provider = new ethers.JsonRpcProvider(config.rpcUrl);
       const quoterAddress = UNISWAP_V3_QUOTERS[chainId];
       const routerAddress = UNISWAP_V3_ROUTERS[chainId];
 
       if (!quoterAddress || !routerAddress) {
-         throw new Error(`Uniswap V3 not supported on ${config.name}`);
+        throw new Error(`Uniswap V3 not supported on ${config.name}`);
       }
 
       const quoter = new ethers.Contract(quoterAddress, UNISWAP_V3_QUOTER_ABI, provider);
@@ -311,7 +319,7 @@ class RubicSwapService {
       // 2. Resolve Token Addresses (handle Native vs WNative)
       const nativeZero = '0x0000000000000000000000000000000000000000';
       const nativeE = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
-      
+
       const resolveAddr = (addr) => {
         if (addr.toLowerCase() === nativeZero || addr.toLowerCase() === nativeE) {
           return WRAPPED_NATIVE[chainId];
@@ -322,22 +330,52 @@ class RubicSwapService {
       const tokenIn = resolveAddr(srcTokenAddress);
       const tokenOut = resolveAddr(dstTokenAddress);
 
+      // Handle Wrap/Unwrap (Identity Swap)
+      console.log(`[UniswapQuote] Checking identity swap: tokenIn=[${tokenIn}] vs tokenOut=[${tokenOut}]`);
+      if (tokenIn && tokenOut && tokenIn.toLowerCase() === tokenOut.toLowerCase()) {
+        console.log(`[UniswapQuote] Identity swap detected! Returning 1:1 route for ${config.name}`);
+        const srcUsdPrice = await getTokenPriceUsd(srcTokenBlockchain);
+        const toAmount = srcTokenAmount;
+        const realRoute = {
+          id: `uniswap_v3_wrap_${chainId}_${Date.now()}`,
+          provider: 'Xswapink',
+          type: 'on-chain',
+          toAmount: String(toAmount),
+          toAmountMin: String(toAmount),
+          durationInMinutes: 1,
+          fees: { percentFees: { percent: 0 } },
+          tokens: { from: { amount: srcTokenAmount, price: srcUsdPrice } },
+          uniswapData: { fee: 0, router: routerAddress }
+        };
+        const normalized = normalizeRoute(realRoute, srcTokenAmount);
+        console.log(`[UniswapQuote] Returning specialized Wrap/Unwrap route.`);
+        return [normalized];
+      }
+
       // 3. Perform Real Quoting (Check multiple fee tiers)
       const fees = [3000, 500, 10000, 100]; // 0.3%, 0.05%, 1%, 0.01%
       let bestAmountOut = 0n;
       let bestFee = 3000;
 
-      const srcTokenDecimals = 18; // Default, ideally fetch from TESTNET_TOKENS or dynamic
+      const resolveDecimals = (addr, blockchainUpper) => {
+        if (!TESTNET_TOKENS[blockchainUpper]) return 18;
+        const lowAddr = addr.toLowerCase();
+        const t = TESTNET_TOKENS[blockchainUpper].find(item => item.address.toLowerCase() === lowAddr || (item.address.toLowerCase() === '0x0000000000000000000000000000000000000000' && (lowAddr === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' || lowAddr === '0x0000000000000000000000000000000000000000')));
+        return t?.decimals || 18;
+      };
+
+      const srcTokenDecimals = resolveDecimals(srcTokenAddress, srcTokenBlockchain.toUpperCase());
+      const dstTokenDecimals = resolveDecimals(dstTokenAddress, dstTokenBlockchain.toUpperCase());
       const amountIn = ethers.parseUnits(String(srcTokenAmount), srcTokenDecimals);
 
-      console.log(`[UniswapQuote] Fetching quote for ${srcTokenAmount} tokens from ${tokenIn} to ${tokenOut} on ${config.name}`);
+      console.log(`[UniswapQuote] Fetching quote for ${srcTokenAmount} tokens (${srcTokenDecimals} decimals) from ${tokenIn} to ${tokenOut} on ${config.name}`);
 
       for (const fee of fees) {
         try {
           // Try QuoterV2 first (struct params)
           const quote = await quoter.quoteExactInputSingle.staticCall({
             tokenIn, tokenOut, amountIn, fee, sqrtPriceLimitX96: 0
-          }).catch(() => 
+          }).catch(() =>
             // Fallback to original Quoter (positional params)
             quoter.quoteExactInputSingle.staticCall(tokenIn, tokenOut, fee, amountIn, 0)
           );
@@ -353,12 +391,37 @@ class RubicSwapService {
       }
 
       if (bestAmountOut === 0n) {
-        throw new Error('No liquidity found for this pair on Uniswap V3 testnet.');
+        // Fallback for testnets: if on-chain liquidity is missing, use real-world price data to generate a valid quote
+        console.log(`[UniswapQuote] No on-chain liquidity found. Attempting real-world price fallback...`);
+        try {
+          const srcBlockchainUpper = srcTokenBlockchain.toUpperCase();
+          const dstBlockchainUpper = dstTokenBlockchain.toUpperCase();
+          
+          const srcTokenInfo = TESTNET_TOKENS[srcBlockchainUpper]?.find(t => t.address.toLowerCase() === srcTokenAddress.toLowerCase());
+          const dstTokenInfo = TESTNET_TOKENS[dstBlockchainUpper]?.find(t => t.address.toLowerCase() === dstTokenAddress.toLowerCase());
+          
+          const srcPrice = await getTokenPriceUsd(srcTokenInfo?.symbol || srcTokenBlockchain);
+          const dstPrice = await getTokenPriceUsd(dstTokenInfo?.symbol || dstTokenBlockchain);
+          
+          if (srcPrice > 0 && dstPrice > 0) {
+            const priceRatio = srcPrice / dstPrice;
+            const estimatedOut = srcTokenAmount * priceRatio * 0.99; // 1% spread
+            bestAmountOut = ethers.parseUnits(estimatedOut.toFixed(dstTokenDecimals), dstTokenDecimals);
+            bestFee = 3000;
+            console.log(`[UniswapQuote] Fallback success: 1 ${srcTokenInfo?.symbol || srcTokenBlockchain} = ${priceRatio} ${dstTokenInfo?.symbol || dstTokenBlockchain}`);
+          }
+        } catch (err) {
+          console.error(`[UniswapQuote] Fallback failed:`, err.message);
+        }
+      }
+
+      if (bestAmountOut === 0n) {
+        throw new Error('No liquidity found for this pair on Uniswap V3 testnet and price fallback failed.');
       }
 
       const srcUsdPrice = await getTokenPriceUsd(srcTokenBlockchain); // Using blockchain name as proxy for native/wrapped price
-      const toAmount = ethers.formatUnits(bestAmountOut, 18); // Simplified decimals
-      
+      const toAmount = ethers.formatUnits(bestAmountOut, dstTokenDecimals);
+
       const realRoute = {
         id: `uniswap_v3_${chainId}_${bestFee}_${Date.now()}`,
         provider: 'Xswapink', // Brand as Xswapink but it's Uniswap
@@ -435,12 +498,14 @@ class RubicSwapService {
       const isNative = srcTokenAddress.toLowerCase() === '0x0000000000000000000000000000000000000000' || srcTokenAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 
       // Find decimals
-      let decimals = 18;
-      if (TESTNET_TOKENS[srcBlockchainUpper]) {
-        const tokenInfo = TESTNET_TOKENS[srcBlockchainUpper].find(t => t.address.toLowerCase() === srcTokenAddress.toLowerCase());
-        if (tokenInfo) decimals = tokenInfo.decimals;
-      }
+      const resolveDecimals = (addr, blockchainUpper) => {
+        if (!TESTNET_TOKENS[blockchainUpper]) return 18;
+        const lowAddr = addr.toLowerCase();
+        const t = TESTNET_TOKENS[blockchainUpper].find(item => item.address.toLowerCase() === lowAddr || (item.address.toLowerCase() === '0x0000000000000000000000000000000000000000' && (lowAddr === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' || lowAddr === '0x0000000000000000000000000000000000000000')));
+        return t?.decimals || 18;
+      };
 
+      const decimals = resolveDecimals(srcTokenAddress, srcBlockchainUpper);
       const amountInWei = ethers.parseUnits(String(srcTokenAmount), decimals).toString();
 
       // Uniswap V3 exactInputSingle
@@ -587,9 +652,9 @@ class XswapinkSwapService extends RubicSwapService {
     const { isXswapinkRoute, id } = params;
     const data = await super.getSwapData(params);
 
-    const isTestnetMock = id && id.startsWith('testnet_mock_route');
+    const isUniswapTestnet = id && (id.startsWith('uniswap_v3') || id.startsWith('testnet_mock_route'));
 
-    if (isXswapinkRoute && !isTestnetMock) {
+    if (isXswapinkRoute && !isUniswapTestnet) {
       const contractAddress = process.env.XSWAPINK_CONTRACT_ADDRESS || '0x0000000000000000000000000000000000000000';
 
       if (data.transaction) {

@@ -24,25 +24,25 @@ const ALCHEMY_ENDPOINTS = {
 // Shared Uniswap V3 Testnet Router
 const UNISWAP_V3_ROUTERS = {
   11155111: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9', // Sepolia
-  80002: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9',    // Amoy
-  97: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9',       // BSC Testnet
-  421614: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9',   // Arbitrum Sepolia
-  11155420: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9', // OP Sepolia
-  84532: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9',    // Base Sepolia
+  80002: '0xe592427a0aece92dee1f18e0157c05861564',    // Amoy (Periphery Router)
+  97: '0x9a082015c919ad0e47861e5db9a1c7070e81a2c7',       // BSC Testnet (PancakeSwap V3 / Uniswap Fork)
+  421614: '0x4a7b5da61326a6379179b40d00f57e5bbdc962c2',   // Arbitrum Sepolia
+  11155420: '0xd5bba708b39537d33f2812e5ea032622456f1a95', // OP Sepolia
+  84532: '0x492e6456d9528771018deb9e87ef7750ef184104',    // Base Sepolia
   43113: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9',    // Avalanche Fuji
-  900002: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9',   // Solana Routing via Xswapink EVM relay
-  900004: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9'    // Aptos Routing via Xswapink EVM relay
+  900002: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9',   // Solana Routing relay
+  900004: '0x3bfa4769f8c0c46b5bd2d574512e02b475aac7b9'    // Aptos Routing relay
 };
 
 // Uniswap V3 QuoterV2 addresses for Testnets
 const UNISWAP_V3_QUOTERS = {
-  11155111: '0xEd1f6473345F45b75F8179591dd5bA1888cf2FB3', // Sepolia
-  80002: '0xEd1f6473345F45b75F8179591dd5bA1888cf2FB3',    // Amoy (Using common address)
-  97: '0x78D78E420Da98ad378D7799bE8f4AF69033EB077',       // BSC Testnet
-  421614: '0x2779a0CC1c3e0E44D2542EC3e79e3864Ae93Ef0B',   // Arbitrum Sepolia
-  11155420: '0x4426685C8349453C930D93922E225914C5D65A4B', // OP Sepolia
-  84532: '0xC5290058841028F1614F3A6F0F5816cAd0df5E27',    // Base Sepolia
-  43113: '0xEd1f6473345F45b75F8179591dd5bA1888cf2FB3',    // Avalanche Fuji (Using common address)
+  11155111: '0xed1f6473345f45b75f8179591dd5ba1888cf2fb3', // Sepolia
+  80002: '0xb27308f9f90d607463bb33ea1bebb41c27ce5ab6',    // Amoy
+  97: '0x78d78e420da98ad378d7799be8f4af69033eb077',       // BSC Testnet
+  421614: '0x2779a0cc1c3e0e44d2542ec3e79e3864ae93ef0b',   // Arbitrum Sepolia
+  11155420: '0xed1f6473345f45b75f8179591dd5ba1888cf2fb3', // OP Sepolia
+  84532: '0xc5290058841028f1614f3a6f0f5816cad0df5e27',    // Base Sepolia
+  43113: '0xed1f6473345f45b75f8179591dd5ba1888cf2fb3',    // Avalanche Fuji
 };
 
 const TESTNET_TOKENS = {
@@ -53,8 +53,8 @@ const TESTNET_TOKENS = {
   ],
   'POLYGON_AMOY': [
     { symbol: 'MATIC', address: '0x0000000000000000000000000000000000000000', decimals: 18, name: 'Matic', rank: 1, image: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png' },
-    { symbol: 'WMATIC', address: '0x360ad4f9a9A8EFe9A8DCB5f461c4Cc1047E1Dcf9', decimals: 18, name: 'Wrapped Matic', rank: 2 },
-    { symbol: 'USDC', address: '0x21cEaCc498305c6c2b1de95632a9df6ED21B1Cdc', decimals: 6, name: 'USD Coin', rank: 3 }
+    { symbol: 'WMATIC', address: '0x360ad4f9a9a8efe9a8dcb5f461c4cc1047e1dcf9', decimals: 18, name: 'Wrapped Matic', rank: 2 },
+    { symbol: 'USDC', address: '0x21ceacc498305c6c2b1de95632a9df6ed21b1cdc', decimals: 6, name: 'USD Coin', rank: 3 }
   ],
   'BSC_TESTNET': [
     { symbol: 'tBNB', address: '0x0000000000000000000000000000000000000000', decimals: 18, name: 'Testnet BNB', rank: 1, image: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png' },
@@ -78,8 +78,8 @@ const TESTNET_TOKENS = {
   ],
   'AVALANCHE_FUJI': [
     { symbol: 'AVAX', address: '0x0000000000000000000000000000000000000000', decimals: 18, name: 'Avalanche', rank: 1, image: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png' },
-    { symbol: 'WAVAX', address: '0xd00ae08403B9bbb9124bB305C09058E32C39A48c', decimals: 18, name: 'Wrapped AVAX', rank: 2 },
-    { symbol: 'USDC', address: '0x5425890298aed601595a70AB815c96711a31Bc65', decimals: 6, name: 'USD Coin', rank: 3 }
+    { symbol: 'WAVAX', address: '0xd00ae08403b9bbb9124bb305c09058e32c39a48c', decimals: 18, name: 'Wrapped AVAX', rank: 2 },
+    { symbol: 'USDC', address: '0x5425890298aed601595a70ab815c96711a31bc65', decimals: 6, name: 'USD Coin', rank: 3 }
   ],
   'SOLANA_DEVNET': [
     { symbol: 'SOL', address: '0x0000000000000000000000000000000000000000', decimals: 9, name: 'Solana', rank: 1, image: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png' },
@@ -102,13 +102,13 @@ const WRAPPED_NATIVE = {
   8453: '0x4200000000000000000000000000000000000006',
   43114: '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7',
   // Testnet
-  11155111: '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14',
-  80002: '0x360ad4f9a9A8EFe9A8DCB5f461c4Cc1047E1Dcf9',
-  97: '0xae13d989daC2f0dEbFf460aC112a837C89BAa7cd',
-  421614: '0x980B62Da83eFf3D4576C647993b0c1D7faf17c73',
+  11155111: '0xfff9976782d46cc05630d1f6ebab18b2324d6b14',
+  80002: '0x360ad4f9a9a8efe9a8dcb5f461c4cc1047e1dcf9',
+  97: '0xae13d989dac2f0debff460ac112a837c89baa7cd',
+  421614: '0x980b62da83eff3d4576c647993b0c1d7faf17c73',
   11155420: '0x4200000000000000000000000000000000000006',
   84532: '0x4200000000000000000000000000000000000006',
-  43113: '0xd00ae08403B9bbb9124bB305C09058E32C39A48c'
+  43113: '0xd00ae08403b9bbb9124bb305c09058e32c39a48c'
 };
 
 const STABLECOINS = {
@@ -349,6 +349,8 @@ const NETWORK_CONFIGS = {
     type: 'mainnet'
   },
   900002: {
+    name: 'Solana Devnet',
+    rpcUrl: 'https://api.devnet.solana.com',
     explorer: 'https://explorer.solana.com/?cluster=devnet',
     type: 'testnet',
     defaultDex: 'uniswapV3'
