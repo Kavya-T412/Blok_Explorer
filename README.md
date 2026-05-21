@@ -2,20 +2,28 @@
 
 Blok_Explorer is a comprehensive blockchain utility platform designed to provide users with tools for token swapping, cross-chain bridging, gas estimation, and real-time transaction tracking across multiple EVM-compatible networks.
 
-<img src="./screenshots/home.png" width="100%" />
+<img src="./images/home.png" width="100%" />
 
 ## 🚀 Features
 
-- **Multi-Chain Swap & Bridge**: Seamlessly swap tokens on the same chain or bridge them across different blockchains using Rubic and Uniswap protocols.
-<img src="./screenshots/swap.png" width="100%" />
-- **Gas Price Estimator**: Real-time gas price tracking for Ethereum, Polygon, BSC, and more to help you optimize transaction costs.
-<img src="./screenshots/gasfee.png" width="100%" />
-- **Transaction Dashboard**: View your wallet balance and detailed transaction history across multiple networks (Mainnet & Testnet).
-<img src="./screenshots/dashboard.png" width="100%" />
-<img src="./screenshots/transactions.png" width="100%" />
-- **Real-Time Notifications**: Subscribe to price alerts and transaction status updates via browser notifications, webhooks, or Discord.
-<img src="./screenshots/notify.png" width="100%" />
-- **Modern UI/UX**: A premium, responsive design built with React, Shadcn UI, and Framer Motion.
+**Multi-Chain Swap & Bridge**: Seamlessly swap tokens on the same chain or bridge them across different blockchains using Rubic and Uniswap protocols.
+
+<img src="./images/swap.png" width="100%" />
+
+**Gas Price Estimator**: Real-time gas price tracking for Ethereum, Polygon, BSC, and more to help you optimize transaction costs.
+
+<img src="./images/gasfee.png" width="100%" />
+
+**Transaction Dashboard**: View your wallet balance and detailed transaction history across multiple networks (Mainnet & Testnet).
+
+<img src="./images/dashboard.png" width="100%" />
+<img src="./images/transactions.png" width="100%" />
+
+**Real-Time Notifications**: Subscribe to price alerts and transaction status updates via browser notifications, webhooks, or Discord.
+
+<img src="./images/notify.png" width="100%" />
+
+**Modern UI/UX**: A premium, responsive design built with React, Shadcn UI, and Framer Motion.
 
 ## 🛠️ Tech Stack
 
